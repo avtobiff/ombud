@@ -324,6 +324,8 @@ main (int argc, char *argv[])
                 }
             } else if (FD_ISSET (sk, &datasocks)) {
                 /* TODO */
+                ;
+#if 0
                 /* recv on remote data socket */
                 uint8_t buf[BUF_SIZE] = { 0 };
                 if ((numbytes = recv(sk, buf, sizeof (buf), 0)) <= 0) {
@@ -340,6 +342,7 @@ main (int argc, char *argv[])
                 }
 
                 fprintf (stdout, "%s", (char *) buf);
+#endif
             }
         }
     }
