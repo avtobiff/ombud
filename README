@@ -1,0 +1,21 @@
+OMBUD
+=====
+
+
+ASSUMPTIONS
+-----------
+* Only IPv4
+* Well formed client commands are assumed.
+
+
+DISADVANTAGES
+-------------
+* Using select(2) doesn't scale that well, being O(fd_max), where fd_max is the
+  largest file descriptor.
+
+
+POSSIBLE IMPROVEMENTS
+---------------------
+* Using epoll(2) or libevent instead. Epoll scales a lot better, O(1), with
+  many file descriptors.
+* Given time I would have tried libuv, it looks interesting.

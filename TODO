@@ -1,0 +1,24 @@
+socket server
+- bind
+- listen
+- start worker
+
+threaded workers with pthreads
+- close listen socket
+- accept, new socket
+- do_recv (recv commands)
+- execute proxy commands
+  - each request in new thread
+- (possible cache)
+- do_send (send response)
+
+cache
+- save files as hash of ip:port, XX/YYY..., where XX is directory for simple fs
+  load balancing
+- cache hits send content with sendfile(2)
+
+
+ideas
+- pthreads, libev?
+- a few worker threads that handle all the data shuffling
+- threads/workers: recv, send
