@@ -1,3 +1,8 @@
+* SIGNAL HANDLER FOR GRACEFUL EXIT
+
+* DEBUG PRINTS
+
+
 socket server
 - bind
 - listen
