@@ -20,6 +20,10 @@ ASSUMPTIONS
 * Well formed client commands and connectable services are assumed,
   malformed requests and unconnectable hosts are silently dropped.
 
+* Not a lot of data will be sent from the services that Ombud connects
+  to, a static buffer size of 8 kB is deemed to be adequate for the use
+  case.
+
 
 DISADVANTAGES
 -------------

@@ -15,9 +15,9 @@
 #include "cache.h"
 
 
-#define PORT     "8090"     /* TODO take this as an command line argument */
-#define BACKLOG  10
-#define BUF_SIZE 500
+#define PORT    "8090"     /* TODO take this as an command line argument */
+#define BACKLOG 10
+#define BUFSIZE 8192
 
 #define CACHE_BASEDIR    "cache-ombud" /* TODO make this configurable */
 #define ADDR_PORT_STRLEN 22
@@ -213,7 +213,7 @@ main (int argc, char *argv[])
                     }
                 } else {
                     /* handle data from client or remote host */
-                    uint8_t buf[BUF_SIZE] = { 0 };
+                    uint8_t buf[BUFSIZE] = { 0 };
                     if ((numbytes = recv(sk, buf, sizeof (buf), 0)) <= 0) {
                         /* connection closed or socket error */
                         if (numbytes == 0) {
@@ -261,7 +261,7 @@ main (int argc, char *argv[])
                         } else {
                             fprintf (stdout, "cache miss\n");
 
-                            uint8_t buf[BUF_SIZE] = { 0 };
+                            uint8_t buf[BUFSIZE] = { 0 };
                             struct addrinfo hints, *remoteinfo, *rp;
 
                             bzero (&hints, sizeof (struct addrinfo));
@@ -364,7 +364,7 @@ main (int argc, char *argv[])
                 ;
 #if 0
                 /* recv on remote data socket */
-                uint8_t buf[BUF_SIZE] = { 0 };
+                uint8_t buf[BUFSIZE] = { 0 };
                 if ((numbytes = recv(sk, buf, sizeof (buf), 0)) <= 0) {
                     /* connection closed or socket error */
                     if (numbytes == 0) {
