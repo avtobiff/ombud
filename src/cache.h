@@ -15,7 +15,7 @@
 #define PATH_MAXSIZ 1024
 
 
-extern int cache_init ();
+extern int cache_init (const uint8_t * dir);
 
 extern int cache_lookup (const uint8_t * key);
 

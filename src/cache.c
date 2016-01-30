@@ -9,9 +9,8 @@
 
 #include "cache.h"
 
-/* TODO make this configurable */
-#define CACHE_BASEDIR "cache-ombud"
 
+static uint8_t cache_basedir[PATH_MAXSIZ + 1] = { 0 };
 
 
 /**
@@ -20,7 +19,7 @@
 void
 compute_hash (const uint8_t * key, uint8_t * hash)
 {
-    uint8_t tmphash[SHA_DIGEST_LENGTH]  = { 0 };
+    uint8_t tmphash[SHA_DIGEST_LENGTH] = { 0 };
 
     /* hash "addr:port" as cache key */
     SHA1 ((unsigned char *) key,
@@ -43,7 +42,8 @@ void
 cache_dir (const uint8_t * hash, uint8_t * cache_dir_)
 {
     /* path to base cache dir */
-    strncat ((char *) cache_dir_, (char *) CACHE_BASEDIR, strlen (CACHE_BASEDIR));
+    strncat ((char *) cache_dir_, (char *) cache_basedir,
+             strlen ((char *) cache_basedir));
     strncat ((char *) cache_dir_, "/", 1);
     /* two first hex digits are directory name */
     strncat ((char *) cache_dir_, (char *) hash, 2);
@@ -56,7 +56,7 @@ cache_dir (const uint8_t * hash, uint8_t * cache_dir_)
 void
 cache_fpath (const uint8_t * hash, uint8_t * cache_file_path)
 {
-    uint8_t cache_dir_[PATH_MAXSIZ + 1]  = { 0 };
+    uint8_t cache_dir_[PATH_MAXSIZ + 1] = { 0 };
 
     cache_dir (hash, cache_dir_);
 
@@ -78,14 +78,17 @@ cache_fpath (const uint8_t * hash, uint8_t * cache_file_path)
  * Note this is not handling nestling of directories, i.e. mkdir -p.
  */
 int
-cache_init ()
+cache_init (const uint8_t *dir)
 {
     struct stat     st;
     int             status = 0;
 
-    if (stat (CACHE_BASEDIR, &st) != 0) {
+    /* setup cache_basedir */
+    strncat ((char *) cache_basedir, (char *) dir, strlen ((char *) dir));
+
+    if (stat ((char *) cache_basedir, &st) != 0) {
         /* cache directory does not exist, create it */
-        if (mkdir (CACHE_BASEDIR, 0777) != 0 && errno != EEXIST) {
+        if (mkdir ((char *) cache_basedir, 0777) != 0 && errno != EEXIST) {
             status = -1;
         }
     } else if (!S_ISDIR (st.st_mode)) {
@@ -129,7 +132,7 @@ cache_fsize (const uint8_t * key)
 int
 cache_lookup (const uint8_t * key)
 {
-    uint8_t hash[HASHLEN]  = { 0 };
+    uint8_t hash[HASHLEN] = { 0 };
     uint8_t cache_file_path[PATH_MAXSIZ + 1] = { 0 };
     struct stat st;
 
@@ -158,8 +161,8 @@ cache_lookup (const uint8_t * key)
 int
 cache_write (const uint8_t * key, const uint8_t * buf)
 {
-    uint8_t hash[HASHLEN]  = { 0 };
-    uint8_t cache_dir_[PATH_MAXSIZ + 1]  = { 0 };
+    uint8_t hash[HASHLEN] = { 0 };
+    uint8_t cache_dir_[PATH_MAXSIZ + 1] = { 0 };
     uint8_t cache_file_path[PATH_MAXSIZ + 1] = { 0 };
     int fp;
 

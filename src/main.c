@@ -19,7 +19,7 @@
 #define BACKLOG  10
 #define BUF_SIZE 500
 
-/* TODO put in cache */
+#define CACHE_BASEDIR    "cache-ombud" /* TODO make this configurable */
 #define ADDR_PORT_STRLEN 22
 
 
@@ -149,7 +149,7 @@ main (int argc, char *argv[])
     }
 
     /* initialize cache */
-    if (cache_init () < 0) {
+    if (cache_init ((const uint8_t *) CACHE_BASEDIR) < 0) {
         exit_errormsg ("could not create cache dir");
     }
 
