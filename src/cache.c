@@ -30,8 +30,6 @@ __compute_hash (const uint8_t * key, uint8_t * hash)
     for (uint8_t i = 0; i < SHA_DIGEST_LENGTH; i++) {
         sprintf ((char *) &(hash[i * 2]), "%02x", tmphash[i]);
     }
-
-    fprintf (stdout, "compute_hash: %s\n", hash);
 }
 
 
@@ -60,15 +58,11 @@ __cache_fpath (const uint8_t * hash, uint8_t * cache_file_path)
 
     __cache_dir (hash, cache_dir_);
 
-    fprintf (stdout, "fpath: hash = %s\n", hash);
-
     strncat ((char *) cache_file_path, (char *) cache_dir_,
              strlen ((char *) cache_dir_));
     strncat ((char *) cache_file_path, "/", 1);
     /* last 18 hex digits are the file name */
     strncat ((char *) cache_file_path, (char *) hash + 2, HASHLEN - 2);
-
-    fprintf (stdout, "%s <--\n", cache_file_path);
 }
 
 
@@ -120,19 +114,13 @@ cache_lookup (const uint8_t * key)
     struct stat st;
 
     __compute_hash (key, hash);
-    fprintf (stdout, "lookup: hash = %s\n", hash);
     __cache_fpath (hash, cache_file_path);
 
     if (stat ((char *) cache_file_path, &st) != 0) {
         /* cache miss, file does not exist */
-        fprintf (stdout, "cache missssy\n");
-        fprintf (stdout, "%s\n", cache_file_path);
-        perror ("lol");
         return 0;
     }
 
-    fprintf (stdout, "cache hitty\n");
-    fprintf (stdout, "S_ISREG (st.st_mode) = %d\n", S_ISREG (st.st_mode));
     /* cache hit, if file exists and is a regular file */
     return S_ISREG (st.st_mode);
 }
@@ -165,8 +153,6 @@ cache_write (const uint8_t * key, const uint8_t * buf)
     write (fp, buf, strlen ((char *) buf));
     fsync (fp); // ensure everything is flushed to disk
     close (fp);
-
-    fprintf (stdout, "cache write\n");
 
     return 0;
 }
