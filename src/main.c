@@ -161,7 +161,8 @@ main (int argc, char *argv[])
 
     /* initialize cache */
     if (cache_init ((const uint8_t *) CACHE_BASEDIR) < 0) {
-        exit_errormsg ("could not create cache dir");
+        fprintf (stderr, "could not create cache dir\n");
+        exit (EXIT_FAILURE);
     }
 
     /* clear socket sets */
