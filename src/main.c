@@ -7,14 +7,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/sendfile.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#include "cache.h"
 
 
 #define PORT     "8090"     /* TODO take this as an command line argument */
 #define BACKLOG  10
 #define BUF_SIZE 500
+
+/* TODO put in cache */
+#define ADDR_PORT_STRLEN 22
 
 
 /* TODO create a (connection) session struct */
@@ -141,6 +147,11 @@ main (int argc, char *argv[])
         exit_errormsg ("could not listen");
     }
 
+    /* initialize cache */
+    if (cache_init () < 0) {
+        exit_errormsg ("could not create cache dir");
+    }
+
     /* clear socket sets */
     FD_ZERO (&sockset);
     FD_ZERO (&ctrlsocks);
@@ -229,97 +240,117 @@ main (int argc, char *argv[])
 
                         free (orig);
 
-                        /* TODO cache lookup of hash (srv[1]:srv[2]) else dl */
+                        /* cache lookup of hash (srv[1]:srv[2]) else dl */
+
+                        uint8_t addr_port[ADDR_PORT_STRLEN] = { 0 };
+
+                        strncat ((char *) addr_port, (char *) srv[0], strlen ((char *) srv[0]));
+                        strncat ((char *) addr_port, ":", 1);
+                        strncat ((char *) addr_port, (char *) srv[1], strlen ((char *) srv[1]));
 
 
-                        struct addrinfo hints, *remoteinfo, *rp;
+                        /* send from cache, otherwise */
+                        if (cache_lookup (addr_port)) {
+                            fprintf (stdout, "cache hit\n");
+                            /* TODO error handling */
+                            int cfd = cache_open (addr_port);
 
-                        bzero (&hints, sizeof (struct addrinfo));
-                        hints.ai_family   = AF_UNSPEC;
-                        hints.ai_socktype = SOCK_STREAM;
+                            /* TODO sendfile_all? */
+                            sendfile (sk, cfd, NULL, cache_fsize (addr_port));
+                        } else {
+                            fprintf (stdout, "cache miss\n");
 
-                        int r;
-                        if ((r = getaddrinfo ((char *) srv[0], (char *) srv[1],
-                                                  &hints, &remoteinfo)) != 0) {
-                            fprintf (stderr, "getaddrinfo: %s\n",
-                                     gai_strerror (r));
-                            continue;
-                        }
+                            uint8_t buf[BUF_SIZE] = { 0 };
+                            struct addrinfo hints, *remoteinfo, *rp;
 
-                        int dsk;
-                        for (rp = remoteinfo; rp != NULL; rp++) {
-                            if ((dsk = socket (rp->ai_family, rp->ai_socktype,
-                                               rp->ai_protocol)) == -1) {
-                                perror("data: socket");
+                            bzero (&hints, sizeof (struct addrinfo));
+                            hints.ai_family   = AF_UNSPEC;
+                            hints.ai_socktype = SOCK_STREAM;
+
+                            int r;
+                            if ((r = getaddrinfo ((char *) srv[0], (char *) srv[1],
+                                                      &hints, &remoteinfo)) != 0) {
+                                fprintf (stderr, "getaddrinfo: %s\n",
+                                         gai_strerror (r));
                                 continue;
                             }
 
-                            if (connect (dsk, rp->ai_addr, rp->ai_addrlen) == -1) {
-                                close (dsk);
-                                perror ("data: connect");
-                                continue;
+                            int dsk;
+                            for (rp = remoteinfo; rp != NULL; rp++) {
+                                if ((dsk = socket (rp->ai_family, rp->ai_socktype,
+                                                   rp->ai_protocol)) == -1) {
+                                    perror("data: socket");
+                                    continue;
+                                }
+
+                                if (connect (dsk, rp->ai_addr, rp->ai_addrlen) == -1) {
+                                    close (dsk);
+                                    perror ("data: connect");
+                                    continue;
+                                }
+
+                                break;
                             }
 
-                            break;
-                        }
+                            if (dsk > fdmax) {
+                                fdmax = dsk;
+                            }
 
-                        if (dsk > fdmax) {
-                            fdmax = dsk;
-                        }
+                            if (rp == NULL) {
+                                fprintf (stderr,
+                                         "data: could not connect to %s:%s\n",
+                                         (char *) srv[0], (char *) srv[1]);
+                                /* TODO what to do if connection fails */
+                                break;
+                            }
 
-                        if (rp == NULL) {
-                            fprintf (stderr,
-                                     "data: could not connect to %s:%s\n",
-                                     (char *) srv[0], (char *) srv[1]);
-                            continue;
-                        }
-
-                        fprintf (stdout, "connected to %s:%s with socket %d\n",
-                                 (char *) srv[0], (char *) srv[1], dsk);
+                            fprintf (stdout, "connected to %s:%s with socket %d\n",
+                                     (char *) srv[0], (char *) srv[1], dsk);
 
 #if 0
-                        if (setnonblock (dsk) < 0) {
-                            perror ("could not make data socket nonblocking");
-                            continue;
-                        }
+                            if (setnonblock (dsk) < 0) {
+                                perror ("could not make data socket nonblocking");
+                                continue;
+                            }
 #endif
 
-                        /* add data socket to socket set */
-                        //FD_SET (dsk, &sockset);
+                            /* add data socket to socket set */
+                            //FD_SET (dsk, &sockset);
 
-            /*
-             * TODO THIS SHOULD GO INTE recv on remote data socket
-             */
+                /*
+                 * TODO THIS SHOULD GO INTO recv on remote data socket
+                 */
 
-                        /* recv on remote data socket */
-                        uint8_t buf[BUF_SIZE] = { 0 };
-                        if ((numbytes = recv(dsk, buf, sizeof (buf), 0)) <= 0) {
-                            /* connection closed or socket error */
-                            if (numbytes == 0) {
-                                fprintf (stdout, "socket %d closed\n", dsk);
-                            } else {
-                                perror ("data recv error");
+                            /* recv on remote data socket */
+                            if ((numbytes = recv(dsk, buf, sizeof (buf), 0)) <= 0) {
+                                /* connection closed or socket error */
+                                if (numbytes == 0) {
+                                    fprintf (stdout, "socket %d closed\n", dsk);
+                                } else {
+                                    perror ("data recv error");
+                                }
+
+                                /* close socket and remove it from socket set */
+                                close (dsk);
+                                FD_CLR (sk, &datasocks);
                             }
 
-                            /* close socket and remove it from socket set */
-                            close (dsk);
-                            //FD_CLR (sk, &datasocks);
+                            fprintf (stdout, "%s", (char *) buf);
+
+                            cache_write (addr_port, buf);
+
+                            /* relay back to client */
+                            size_t buflen = strlen ((char *) buf);
+                            if (sendall (sk, (char *) buf, &buflen) == -1) {
+                                perror ("sendall");
+                                fprintf (stderr, "only sent %d bytes.\n", (int) buflen);
+                            }
+                /*
+                 * END
+                 */
+
+                            freeaddrinfo (remoteinfo);
                         }
-
-                        fprintf (stdout, "%s", (char *) buf);
-
-                        /* relay back to client */
-                        size_t buflen = strlen ((char *) buf);
-                        if (sendall (sk, (char *) buf, &buflen) == -1) {
-                            perror ("sendall");
-                            fprintf (stderr, "only sent %d bytes.\n", (int) buflen);
-                        }
-            /*
-             * END
-             */
-
-                        freeaddrinfo (remoteinfo);
-
                     }
                 }
             } else if (FD_ISSET (sk, &datasocks)) {
