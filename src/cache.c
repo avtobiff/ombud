@@ -2,22 +2,22 @@
  * Simple dictionary based filesystem cache.
  *
  * Keys are composed of "addr:port" combinations. Contents are cached on
- * filesystem where the first two characters of the key hash is a directory and
- * the remaining key hash is the filename. This creates a simple, yet
+ * filesystem where the first two characters of the key hash is a directory
+ * and the remaining key hash is the filename. This creates a simple, yet
  * efficient, load balancing.
  */
 
 #include "cache.h"
 
 
-static uint8_t cache_basedir[PATH_MAXSIZ + 1] = { 0 };
+static uint8_t __cache_basedir[PATH_MAXSIZ + 1] = { 0 };
 
 
 /**
  * Calculate hash based on "addr:port"
  */
-void
-compute_hash (const uint8_t * key, uint8_t * hash)
+static void
+__compute_hash (const uint8_t * key, uint8_t * hash)
 {
     uint8_t tmphash[SHA_DIGEST_LENGTH] = { 0 };
 
@@ -38,12 +38,12 @@ compute_hash (const uint8_t * key, uint8_t * hash)
 /**
  * Get cache directory name.
  */
-void
-cache_dir (const uint8_t * hash, uint8_t * cache_dir_)
+static void
+__cache_dir (const uint8_t * hash, uint8_t * cache_dir_)
 {
     /* path to base cache dir */
-    strncat ((char *) cache_dir_, (char *) cache_basedir,
-             strlen ((char *) cache_basedir));
+    strncat ((char *) cache_dir_, (char *) __cache_basedir,
+             strlen ((char *) __cache_basedir));
     strncat ((char *) cache_dir_, "/", 1);
     /* two first hex digits are directory name */
     strncat ((char *) cache_dir_, (char *) hash, 2);
@@ -53,22 +53,30 @@ cache_dir (const uint8_t * hash, uint8_t * cache_dir_)
 /**
  * Format cache file path.
  */
-void
-cache_fpath (const uint8_t * hash, uint8_t * cache_file_path)
+static void
+__cache_fpath (const uint8_t * hash, uint8_t * cache_file_path)
 {
     uint8_t cache_dir_[PATH_MAXSIZ + 1] = { 0 };
 
-    cache_dir (hash, cache_dir_);
+    __cache_dir (hash, cache_dir_);
 
     fprintf (stdout, "fpath: hash = %s\n", hash);
 
-    strncat ((char *) cache_file_path, (char *) cache_dir_, strlen ((char *) cache_dir_));
+    strncat ((char *) cache_file_path, (char *) cache_dir_,
+             strlen ((char *) cache_dir_));
     strncat ((char *) cache_file_path, "/", 1);
     /* last 18 hex digits are the file name */
     strncat ((char *) cache_file_path, (char *) hash + 2, HASHLEN - 2);
 
     fprintf (stdout, "%s <--\n", cache_file_path);
 }
+
+
+/******************************************************************************
+ *
+ *  API
+ *
+ ******************************************************************************/
 
 /**
  * Initialize the cache.
@@ -78,17 +86,18 @@ cache_fpath (const uint8_t * hash, uint8_t * cache_file_path)
  * Note this is not handling nestling of directories, i.e. mkdir -p.
  */
 int
-cache_init (const uint8_t *dir)
+cache_init (const uint8_t *cache_basedir)
 {
     struct stat     st;
     int             status = 0;
 
-    /* setup cache_basedir */
-    strncat ((char *) cache_basedir, (char *) dir, strlen ((char *) dir));
+    /* setup cache basedir */
+    strncat ((char *) __cache_basedir, (char *) cache_basedir,
+             strlen ((char *) cache_basedir));
 
-    if (stat ((char *) cache_basedir, &st) != 0) {
+    if (stat ((char *) __cache_basedir, &st) != 0) {
         /* cache directory does not exist, create it */
-        if (mkdir ((char *) cache_basedir, 0777) != 0 && errno != EEXIST) {
+        if (mkdir ((char *) __cache_basedir, 0777) != 0 && errno != EEXIST) {
             status = -1;
         }
     } else if (!S_ISDIR (st.st_mode)) {
@@ -97,32 +106,6 @@ cache_init (const uint8_t *dir)
     }
 
     return status;
-}
-
-
-/**
- * Calculate cache file size.
- *
- * Note! This is without error handling for missing keys, perform
- * cache_lookup() first to ensure cache existance.
- */
-size_t
-cache_fsize (const uint8_t * key)
-{
-    uint8_t hash[HASHLEN]  = { 0 };
-    uint8_t cache_file_path[PATH_MAXSIZ + 1] = { 0 };
-    FILE *fp;
-    size_t fsize;
-
-    compute_hash (key, hash);
-    cache_fpath (hash, cache_file_path);
-
-    fp = fopen ((char *) cache_file_path, "r");
-    fseek (fp, 0, SEEK_END);
-    fsize = ftell (fp);
-    fclose (fp);
-
-    return fsize;
 }
 
 
@@ -136,9 +119,9 @@ cache_lookup (const uint8_t * key)
     uint8_t cache_file_path[PATH_MAXSIZ + 1] = { 0 };
     struct stat st;
 
-    compute_hash (key, hash);
+    __compute_hash (key, hash);
     fprintf (stdout, "lookup: hash = %s\n", hash);
-    cache_fpath (hash, cache_file_path);
+    __cache_fpath (hash, cache_file_path);
 
     if (stat ((char *) cache_file_path, &st) != 0) {
         /* cache miss, file does not exist */
@@ -166,9 +149,9 @@ cache_write (const uint8_t * key, const uint8_t * buf)
     uint8_t cache_file_path[PATH_MAXSIZ + 1] = { 0 };
     int fp;
 
-    compute_hash (key, hash);
-    cache_dir (hash, cache_dir_);
-    cache_fpath (hash, cache_file_path);
+    __compute_hash (key, hash);
+    __cache_dir (hash, cache_dir_);
+    __cache_fpath (hash, cache_file_path);
 
     if (mkdir ((char *) cache_dir_, 0777) != 0 && errno != EEXIST) {
         /* could not create cache dir */
@@ -188,6 +171,30 @@ cache_write (const uint8_t * key, const uint8_t * buf)
     return 0;
 }
 
+
+/**
+ * Calculate cache file size.
+ *
+ * Note! This is without error handling for missing keys, perform
+ * cache_lookup() first to ensure cache existance.
+ */
+void
+cache_fsize (const uint8_t * key, size_t *fsize)
+{
+    uint8_t hash[HASHLEN]  = { 0 };
+    uint8_t cache_file_path[PATH_MAXSIZ + 1] = { 0 };
+    FILE *fp;
+
+    __compute_hash (key, hash);
+    __cache_fpath (hash, cache_file_path);
+
+    fp = fopen ((char *) cache_file_path, "r");
+    fseek (fp, 0, SEEK_END);
+    *fsize = ftell (fp);
+    fclose (fp);
+}
+
+
 /**
  * Open existing cache file, return file descriptor
  *
@@ -199,8 +206,8 @@ cache_open (const uint8_t *key)
     uint8_t hash[HASHLEN] = { 0 };
     uint8_t cache_file_path[PATH_MAXSIZ + 1] = { 0 };
 
-    compute_hash (key, hash);
-    cache_fpath (hash, cache_file_path);
+    __compute_hash (key, hash);
+    __cache_fpath (hash, cache_file_path);
 
     return open ((char *) cache_file_path, O_RDONLY);
 }
