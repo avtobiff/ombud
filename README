@@ -1,25 +1,45 @@
 OMBUD
 =====
 
+Ombud (Swedish for proxy) is a simple network proxy which takes commands
+from connecting clients. The commands have the form "ADDRESS:PORT\r\n",
+when Ombud recieves a command it connects to the given address and port,
+reads whatever is sent, caches it on disk, and relays it back to the
+client.
+
+When clients request data from address:port a cache lookup is performed.
+On a cache hit the contents are sent to the client with sendfile(2). On
+a cache miss Ombud connects to the given address and port, reads the
+data, writes it to the cache, and finally relays it back to the client.
+
 
 ASSUMPTIONS
 -----------
 * Only IPv4, no special care taken into account regarding IPv6.
-* Well formed client commands and connectable services are assumed, malformed
-  requests and unconnectable hosts are silently dropped.
+
+* Well formed client commands and connectable services are assumed,
+  malformed requests and unconnectable hosts are silently dropped.
 
 
 DISADVANTAGES
 -------------
-* Using select(2) doesn't scale that well, being O(fd_max), where fd_max is the
-  largest file descriptor.
+* Using select(2) doesn't scale that well, being O(fd_max), where fd_max
+  is the largest file descriptor.
 
 
 POSSIBLE IMPROVEMENTS
 ---------------------
-* Using epoll(2) or libevent instead. Epoll scales a lot better, O(1), with
-  many file descriptors.
+* Using epoll(2) or libevent instead. Epoll scales a lot better, O(1),
+  with many file descriptors.
+
 * Given time I would have tried libuv, it looks interesting.
 
-* In order to make a more efficient cache hostnames could be resolved to ip
-  addresses before they are used as part of the key.
+* In order to make a more efficient cache hostnames could be resolved to
+  ip addresses before they are used as part of the key.
+
+* Linking against OpenSSL. If the code is going to be release under the
+  GPL an OpenSSL linking exception is required in the license in order
+  to be specific about the user's rights and responsibilities.
+
+* Make cache directory and listen port configurable from the command
+  line with getopt and possibly through a configuration file.
