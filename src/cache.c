@@ -86,7 +86,7 @@ __cache_fpath (const uint8_t * hash, uint8_t * cache_file_path)
  * Note this is not handling nestling of directories, i.e. mkdir -p.
  */
 int
-cache_init (const uint8_t *cache_basedir)
+cache_init (const uint8_t * cache_basedir)
 {
     struct stat     st;
     int             status = 0;
@@ -179,7 +179,7 @@ cache_write (const uint8_t * key, const uint8_t * buf)
  * cache_lookup() first to ensure cache existance.
  */
 void
-cache_fsize (const uint8_t * key, size_t *fsize)
+cache_fsize (const uint8_t * key, size_t * fsize)
 {
     uint8_t hash[HASHLEN]  = { 0 };
     uint8_t cache_file_path[PATH_MAXSIZ + 1] = { 0 };
@@ -201,7 +201,7 @@ cache_fsize (const uint8_t * key, size_t *fsize)
  * Note! Data must exist, perform cache_lookup() first.
  */
 int
-cache_open (const uint8_t *key)
+cache_open (const uint8_t * key)
 {
     uint8_t hash[HASHLEN] = { 0 };
     uint8_t cache_file_path[PATH_MAXSIZ + 1] = { 0 };
