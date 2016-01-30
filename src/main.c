@@ -280,7 +280,11 @@ main (int argc, char *argv[])
                                 if ((dsk = socket (rp->ai_family, rp->ai_socktype,
                                                    rp->ai_protocol)) == -1) {
                                     perror("data: socket");
-                                    continue;
+                                    /* don't continue if we could not establish
+                                     * a socket connection
+                                     */
+                                    rp = NULL;
+                                    break;
                                 }
 
                                 if (connect (dsk, rp->ai_addr, rp->ai_addrlen) == -1) {

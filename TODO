@@ -12,13 +12,25 @@ threaded workers with pthreads
 - (possible cache)
 - do_send (send response)
 
+
+ideas
+- pthreads, libev?
+- a few worker threads that handle all the data shuffling
+- threads/workers: recv, send
+
+
+- nonblocking sockets to remote hosts
+- handle nonexisting remote hosts
+
+
+DONE
+
 cache
 - save files as hash of ip:port, XX/YYY..., where XX is directory for simple fs
   load balancing
 - cache hits send content with sendfile(2)
 
 
-ideas
-- pthreads, libev?
-- a few worker threads that handle all the data shuffling
-- threads/workers: recv, send
+NOPE
+
+pthreads
