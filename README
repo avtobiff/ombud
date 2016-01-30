@@ -4,8 +4,9 @@ OMBUD
 
 ASSUMPTIONS
 -----------
-* Only IPv4
-* Well formed client commands are assumed.
+* Only IPv4, no special care taken into account regarding IPv6.
+* Well formed client commands and connectable services are assumed, malformed
+  requests and unconnectable hosts are silently dropped.
 
 
 DISADVANTAGES
@@ -19,3 +20,6 @@ POSSIBLE IMPROVEMENTS
 * Using epoll(2) or libevent instead. Epoll scales a lot better, O(1), with
   many file descriptors.
 * Given time I would have tried libuv, it looks interesting.
+
+* In order to make a more efficient cache hostnames could be resolved to ip
+  addresses before they are used as part of the key.
