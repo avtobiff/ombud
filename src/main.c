@@ -26,7 +26,7 @@
 /* TODO create a (connection) session struct */
 
 
-int
+static int
 setnonblock (int socket)
 {
     int flags = fcntl (socket, F_GETFL);
@@ -40,14 +40,15 @@ setnonblock (int socket)
     return -1;
 }
 
-void
+/* TODO use err(int,char *) from err.h instead */
+static void
 exit_errormsg (const char *msg)
 {
     perror (msg);
     exit (EXIT_FAILURE);
 }
 
-int
+static int
 sendall (int socket, char *buf, size_t *buflen)
 {
     int32_t   sentbytes = 0,
@@ -65,6 +66,16 @@ sendall (int socket, char *buf, size_t *buflen)
     *buflen = sentbytes;
 
     return numbytes == -1 ? -1 : 0;
+}
+
+static void
+__send_from_cache (const int sk, const uint8_t *key)
+{
+    /* TODO error handling */
+    int cfd = cache_open (key);
+    size_t fsz;
+    cache_fsize (key, &fsz);
+    sendfile (sk, cfd, NULL, fsz);
 }
 
 
@@ -253,11 +264,7 @@ main (int argc, char *argv[])
                         /* send from cache, otherwise */
                         if (cache_lookup (addr_port)) {
                             fprintf (stdout, "cache hit\n");
-                            /* TODO error handling */
-                            int cfd = cache_open (addr_port);
-
-                            /* TODO sendfile_all? */
-                            sendfile (sk, cfd, NULL, cache_fsize (addr_port));
+                            __send_from_cache (sk, addr_port);
                         } else {
                             fprintf (stdout, "cache miss\n");
 
