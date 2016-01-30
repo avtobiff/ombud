@@ -1,7 +1,7 @@
-/*
- * Simple dictionary based filesystem based cache.
+/**
+ * Simple dictionary based filesystem cache.
  *
- * Keys are composed of "ip:port" combinations. Contents are cached on
+ * Keys are composed of "addr:port" combinations. Contents are cached on
  * filesystem where the first two characters of the key hash is a directory and
  * the remaining key hash is the filename. This creates a simple, yet
  * efficient, load balancing.
@@ -13,7 +13,8 @@
 #define CACHE_BASEDIR "cache-ombud"
 
 
-/*
+
+/**
  * Calculate hash based on "addr:port"
  */
 void
@@ -35,7 +36,7 @@ compute_hash (const uint8_t * key, uint8_t * hash)
 }
 
 
-/*
+/**
  * Get cache directory name.
  */
 void
@@ -49,7 +50,7 @@ cache_dir (const uint8_t * hash, uint8_t * cache_dir_)
 }
 
 
-/*
+/**
  * Format cache file path.
  */
 void
@@ -69,13 +70,13 @@ cache_fpath (const uint8_t * hash, uint8_t * cache_file_path)
     fprintf (stdout, "%s <--\n", cache_file_path);
 }
 
-/*
-* Initialize the cache.
-*
-* Create cache directory if it does not already exist.
-*
-* Note this is not handling nestling of directories, i.e. mkdir -p.
-*/
+/**
+ * Initialize the cache.
+ *
+ * Create cache directory if it does not already exist.
+ *
+ * Note this is not handling nestling of directories, i.e. mkdir -p.
+ */
 int
 cache_init ()
 {
@@ -96,12 +97,12 @@ cache_init ()
 }
 
 
-/*
-* Calculate cache file size.
-*
-* Note! This is without error handling for missing keys, perform
-* cache_lookup() first to ensure cache existance.
-*/
+/**
+ * Calculate cache file size.
+ *
+ * Note! This is without error handling for missing keys, perform
+ * cache_lookup() first to ensure cache existance.
+ */
 size_t
 cache_fsize (const uint8_t * key)
 {
@@ -122,9 +123,9 @@ cache_fsize (const uint8_t * key)
 }
 
 
-/*
-* Perform a cache lookup.
-*/
+/**
+ * Perform a cache lookup.
+ */
 int
 cache_lookup (const uint8_t * key)
 {
@@ -151,9 +152,9 @@ cache_lookup (const uint8_t * key)
 }
 
 
-/*
-* Store buf in cache at key.
-*/
+/**
+ * Store buf in cache at key.
+ */
 int
 cache_write (const uint8_t * key, const uint8_t * buf)
 {
@@ -184,11 +185,11 @@ cache_write (const uint8_t * key, const uint8_t * buf)
     return 0;
 }
 
-/*
-* Open existing cache file, return file descriptor
-*
-* Note! Data must exist, perform cache_lookup() first.
-*/
+/**
+ * Open existing cache file, return file descriptor
+ *
+ * Note! Data must exist, perform cache_lookup() first.
+ */
 int
 cache_open (const uint8_t *key)
 {

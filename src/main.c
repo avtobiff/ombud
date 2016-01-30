@@ -103,7 +103,8 @@ main (int argc, char *argv[])
         exit (EXIT_FAILURE);
     }
 
-    /* loop through possible addr configs and try to open listen socket and
+    /**
+     * loop through possible addr configs and try to open listen socket and
      * bind it
      */
     for (c = srvinfo; c != NULL; c = c->ai_next) {
@@ -280,7 +281,8 @@ main (int argc, char *argv[])
                                 if ((dsk = socket (rp->ai_family, rp->ai_socktype,
                                                    rp->ai_protocol)) == -1) {
                                     perror("data: socket");
-                                    /* don't continue if we could not establish
+                                    /**
+                                     * don't continue if we could not establish
                                      * a socket connection
                                      */
                                     rp = NULL;
@@ -321,7 +323,7 @@ main (int argc, char *argv[])
                             /* add data socket to socket set */
                             //FD_SET (dsk, &sockset);
 
-                /*
+                /**
                  * TODO THIS SHOULD GO INTO recv on remote data socket
                  */
 
@@ -349,7 +351,7 @@ main (int argc, char *argv[])
                                 perror ("sendall");
                                 fprintf (stderr, "only sent %d bytes.\n", (int) buflen);
                             }
-                /*
+                /**
                  * END
                  */
 
