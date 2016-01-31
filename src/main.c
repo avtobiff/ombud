@@ -1,5 +1,5 @@
 #include <assert.h>
-#include <arpa/inet.h>
+#include <err.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <stdbool.h>
@@ -14,16 +14,24 @@
 #include "cache.h"
 
 
-#define PORT    "8090"     /* TODO take this as an command line argument */
-#define BUFSIZE 8192
+#define DEFAULT_PORT    "8090"
+#define BUFSIZE         8192
 
 #define CACHE_BASEDIR    "cache-ombud" /* TODO make this configurable */
 #define ADDR_PORT_STRLEN 22
 
 
-/* TODO create a (connection) session struct */
+/* socket sets and highest file descriptor, for use with select() */
+static fd_set   sockset,
+                ctrlsocks,
+                datasocks;
+
+static int      fdmax;
 
 
+/**
+ * Make supplied socket non-blocking.
+ */
 static int
 mk_nonblock (int socket)
 {
@@ -38,68 +46,29 @@ mk_nonblock (int socket)
     return -1;
 }
 
-/* TODO use err(int,char *) from err.h instead */
-static void
-exit_errormsg (const char *msg)
-{
-    perror (msg);
-    exit (EXIT_FAILURE);
-}
 
+/**
+ * Setup listen socket and bind to it.
+ */
 static int
-sendall (int socket, char *buf, size_t *buflen)
+setup_listener(const uint8_t *server_port)
 {
-    int32_t   sentbytes = 0,
-              bytesleft = *buflen,
-              numbytes = 0;
+    struct addrinfo     hints,
+                        *srvinfo,
+                        *c;
 
-    while (numbytes < (int32_t) *buflen) {
-        numbytes = send (socket, buf + sentbytes, bytesleft, 0);
-        if (numbytes == -1) { break; }
-        sentbytes += numbytes;
-        bytesleft -= numbytes;
-    }
-
-    /* set buflen, i.e. "return value" */
-    *buflen = sentbytes;
-
-    return numbytes == -1 ? -1 : 0;
-}
-
-
-int
-main (int argc, char *argv[])
-{
-    /* socket sets for use with select */
-    fd_set                      sockset,
-                                ctrlsocks,
-                                datasocks;
-
-    int                         listener,
-                                fdmax;              /* largest fd in use */
-
-    struct addrinfo             hints,
-                                *srvinfo,
-                                *c;
-
-    struct sockaddr_storage     remoteaddr;
-    socklen_t                   remoteaddr_len;
-    uint8_t                     remoteaddr_str[INET_ADDRSTRLEN];
-
-    ssize_t                     numbytes;
-
+    int                 listensock;
 
     /* configure listen connection */
     bzero (&hints, sizeof (struct addrinfo));
-    hints.ai_family   = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags    = AI_PASSIVE;
+    hints.ai_family   = AF_INET;        /* IPv4 */
+    hints.ai_socktype = SOCK_STREAM;    /* TCP  */
+    hints.ai_flags    = AI_PASSIVE;     /* all interfaces */
 
     /* get server address info for our configuration */
-    int r = getaddrinfo (NULL, PORT, &hints, &srvinfo);
+    int r = getaddrinfo (NULL, (char *) server_port, &hints, &srvinfo);
     if (r != 0) {
-        fprintf (stderr, "getaddrinfo: %s\n", gai_strerror (r));
-        exit (EXIT_FAILURE);
+        err (1, "getaddrinfo: %s\n", gai_strerror (r));
     }
 
     /**
@@ -108,25 +77,25 @@ main (int argc, char *argv[])
      */
     for (c = srvinfo; c != NULL; c = c->ai_next) {
         /* setup a non-blocking listen socket */
-        listener = socket (c->ai_family, c->ai_socktype, c->ai_protocol);
-        if (mk_nonblock (listener) < 0) {
-            exit_errormsg ("could not make listen socket nonblocking");
+        listensock = socket (c->ai_family, c->ai_socktype, c->ai_protocol);
+        if (mk_nonblock (listensock) < 0) {
+            err (1, "could not make listen socket nonblocking");
         }
 
-        if (listener == -1) {
+        if (listensock < 0) {
             perror ("could not open socket");
             continue;
         }
 
         /* enable reuse of sockets busy in TIME_WAIT */
         int true_ = true;
-        if (setsockopt (listener, SOL_SOCKET, SO_REUSEADDR, &true_,
-                        sizeof (int)) == -1) {
-            exit_errormsg ("could not set SO_REUSEADDR on listen socket");
+        if (setsockopt (listensock, SOL_SOCKET, SO_REUSEADDR, &true_,
+                        sizeof (int)) < 0) {
+            err (1, "could not set SO_REUSEADDR on listen socket");
         }
 
-        if (bind (listener, c->ai_addr, c->ai_addrlen) == -1) {
-            close (listener);
+        if (bind (listensock, c->ai_addr, c->ai_addrlen) < 0) {
+            close (listensock);
             perror("could not bind socket");
             continue;
         }
@@ -142,10 +111,96 @@ main (int argc, char *argv[])
 
     freeaddrinfo (srvinfo);
 
-    fprintf (stdout, "Listen socket setup...\n");
-    if (listen (listener, SOMAXCONN) == -1) {
-        exit_errormsg ("could not listen");
+    if (listen (listensock, SOMAXCONN) < 0) {
+        err (1, "could not listen");
     }
+
+    return listensock;
+}
+
+
+/**
+ * Accept incoming connection.
+ */
+static void
+do_accept (int listensock)
+{
+    int                         client_socket;
+    struct sockaddr_storage     peer_addr;
+    socklen_t                   peer_addr_len;
+
+
+    peer_addr_len = sizeof (peer_addr);
+    client_socket = accept (listensock, (struct sockaddr *) &peer_addr,
+                            &peer_addr_len);
+
+    /* enable non-blocking socket */
+    if (mk_nonblock (client_socket) < 0) {
+        err (1, "could not make control socket non-blocking");
+    }
+
+    if (client_socket < 0) {
+        perror ("could not accept");
+    } else {
+        /* add accepted client socket to socket set */
+        FD_SET (client_socket, &sockset);
+
+        /* update fdmax if client_socket is larger */
+        if (client_socket > fdmax) {
+            fdmax = client_socket;
+        }
+    }
+}
+
+
+static int
+sendall (int socket, char *buf, size_t *buflen)
+{
+    int32_t   sentbytes = 0,
+              bytesleft = *buflen,
+              numbytes = 0;
+
+    while (numbytes < (int32_t) *buflen) {
+        numbytes = send (socket, buf + sentbytes, bytesleft, 0);
+        if (numbytes < 0) { break; }
+        sentbytes += numbytes;
+        bytesleft -= numbytes;
+    }
+
+    /* set buflen, i.e. "return value" */
+    *buflen = sentbytes;
+
+    return numbytes == -1 ? -1 : 0;
+}
+
+
+int
+main (int argc, char *argv[])
+{
+    int                         listensock;
+
+    ssize_t                     numbytes;
+
+    uint8_t                     *server_port;
+
+
+    /* get (valid) port from command line or use default port */
+    if (argc == 2 && atoi (argv[1]) < 65536) {
+        size_t portlen = strlen (argv[1]);
+        server_port = calloc (1, portlen);
+        strncat ((char *) server_port, argv[1], portlen);
+    } else {
+        server_port = calloc (1, 5);
+        strcat ((char *) server_port, DEFAULT_PORT);
+    }
+
+    /* setup listen socket */
+    if ((listensock = setup_listener (server_port)) < 0) {
+        err (1, "Could not setup listen socket");
+    }
+
+    fprintf (stdout, "Listening on port %s...\n", (char *) server_port);
+    free (server_port);
 
     /* initialize cache */
     if (cache_init ((const uint8_t *) CACHE_BASEDIR) < 0) {
@@ -158,9 +213,9 @@ main (int argc, char *argv[])
     FD_ZERO (&ctrlsocks);
     FD_ZERO (&datasocks);
 
-    /* add listener to client socket set, largest fd is listener so far */
-    FD_SET (listener, &sockset);
-    fdmax = listener;
+    /* add listensock to client socket set, largest fd is listensock so far */
+    FD_SET (listensock, &sockset);
+    fdmax = listensock;
 
     fprintf (stdout, "Entering main loop...\n");
     for (;;) {
@@ -169,48 +224,17 @@ main (int argc, char *argv[])
         datasocks = sockset;
 
         fprintf (stdout, "Another lap in the loop...\n");
-        if (select (fdmax + 1, &ctrlsocks, NULL, NULL, NULL) == -1) {
-            exit_errormsg ("select sockset");
+        if (select (fdmax + 1, &ctrlsocks, NULL, NULL, NULL) < 0) {
+            err (1, "select sockset");
         }
 
         /* loop through all existing connections for data to read */
         for (int sk = 0; sk <= fdmax; sk++) {
             /* found one socket to read from */
             if (FD_ISSET (sk, &ctrlsocks)) {
-                if (sk == listener) {
+                if (sk == listensock) {
                     /* accept new connection */
-                    remoteaddr_len = sizeof (remoteaddr);
-                    int csock = accept (listener,
-                                        (struct sockaddr *) &remoteaddr,
-                                        &remoteaddr_len);
-
-                    /* enable non-blocking socket */
-                    if (mk_nonblock (csock) < 0) {
-                        exit_errormsg ("could not make control socket "
-                                       "nonblocking");
-                    }
-
-                    if (csock == -1){
-                        perror ("could not accept");
-                    } else {
-                        /* add accepted client socket to socket set */
-                        FD_SET (csock, &sockset);
-
-                        /* update fdmax if csock is larger */
-                        if (csock > fdmax) {
-                            fdmax = csock;
-                            fprintf (stdout, "fdmax = %d\n", fdmax);
-                        }
-
-                        inet_ntop (remoteaddr.ss_family,
-                                   &((struct sockaddr_in *) &remoteaddr)->sin_addr,
-                                   (char *) remoteaddr_str,
-                                   INET_ADDRSTRLEN),
-                        fprintf (stdout,
-                                 "New connection from %s on socket %d\n",
-                                 (char *) remoteaddr_str,
-                                 csock);
-                    }
+                    do_accept (sk);
                 } else {
                     /* handle data from client or remote host */
                     uint8_t buf[BUFSIZE] = { 0 };
@@ -278,7 +302,7 @@ main (int argc, char *argv[])
                             int dsk;
                             for (rp = remoteinfo; rp != NULL; rp++) {
                                 if ((dsk = socket (rp->ai_family, rp->ai_socktype,
-                                                   rp->ai_protocol)) == -1) {
+                                                   rp->ai_protocol)) < 0) {
                                     perror("data: socket");
                                     /**
                                      * don't continue if we could not establish
@@ -288,7 +312,7 @@ main (int argc, char *argv[])
                                     break;
                                 }
 
-                                if (connect (dsk, rp->ai_addr, rp->ai_addrlen) == -1) {
+                                if (connect (dsk, rp->ai_addr, rp->ai_addrlen) < 0) {
                                     close (dsk);
                                     perror ("data: connect");
                                     continue;
@@ -346,7 +370,7 @@ main (int argc, char *argv[])
 
                             /* relay back to client */
                             size_t buflen = strlen ((char *) buf);
-                            if (sendall (sk, (char *) buf, &buflen) == -1) {
+                            if (sendall (sk, (char *) buf, &buflen) < 0) {
                                 perror ("sendall");
                                 fprintf (stderr, "only sent %d bytes.\n", (int) buflen);
                             }
