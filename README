@@ -24,6 +24,9 @@ ASSUMPTIONS
   to, a static buffer size of 8 kB is deemed to be adequate for the use
   case.
 
+* Data downloaded from hosts are assumed to never change, hence the
+  content in the cache never expires.
+
 
 DISADVANTAGES
 -------------
@@ -47,3 +50,6 @@ POSSIBLE IMPROVEMENTS
 
 * Make cache directory and listen port configurable from the command
   line with getopt and possibly through a configuration file.
+
+* Since this is a simple server it might be enough to store the cache in
+  memory. Alternatively, store it in a ramdisk.
