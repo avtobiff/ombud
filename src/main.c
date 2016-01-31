@@ -15,7 +15,7 @@
 
 
 #define DEFAULT_PORT    "8090"
-#define BUFSIZE         8192
+#define BUFLEN          8192
 
 #define CACHE_BASEDIR    "cache-ombud" /* TODO make this configurable */
 #define ADDR_PORT_STRLEN 22
@@ -223,7 +223,6 @@ main (int argc, char *argv[])
         ctrlsocks = sockset;
         datasocks = sockset;
 
-        fprintf (stdout, "Another lap in the loop...\n");
         if (select (fdmax + 1, &ctrlsocks, NULL, NULL, NULL) < 0) {
             err (1, "select sockset");
         }
@@ -237,7 +236,7 @@ main (int argc, char *argv[])
                     do_accept (sk);
                 } else {
                     /* handle data from client or remote host */
-                    uint8_t buf[BUFSIZE] = { 0 };
+                    uint8_t buf[BUFLEN] = { 0 };
                     if ((numbytes = recv(sk, buf, sizeof (buf), 0)) <= 0) {
                         /* connection closed or socket error */
                         if (numbytes == 0) {
@@ -284,7 +283,7 @@ main (int argc, char *argv[])
                         } else {
                             fprintf (stdout, "cache miss\n");
 
-                            uint8_t buf[BUFSIZE] = { 0 };
+                            uint8_t buf[BUFLEN] = { 0 };
                             struct addrinfo hints, *remoteinfo, *rp;
 
                             bzero (&hints, sizeof (struct addrinfo));
@@ -387,7 +386,7 @@ main (int argc, char *argv[])
                 ;
 #if 0
                 /* recv on remote data socket */
-                uint8_t buf[BUFSIZE] = { 0 };
+                uint8_t buf[BUFLEN] = { 0 };
                 if ((numbytes = recv(sk, buf, sizeof (buf), 0)) <= 0) {
                     /* connection closed or socket error */
                     if (numbytes == 0) {
