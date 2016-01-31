@@ -53,3 +53,6 @@ POSSIBLE IMPROVEMENTS
 
 * Since this is a simple server it might be enough to store the cache in
   memory. Alternatively, store it in a ramdisk.
+
+* More robust error handling, e.g. cache storage breaks between succesful
+  lookup and send.
