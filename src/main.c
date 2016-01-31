@@ -7,7 +7,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/sendfile.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -66,16 +65,6 @@ sendall (int socket, char *buf, size_t *buflen)
     *buflen = sentbytes;
 
     return numbytes == -1 ? -1 : 0;
-}
-
-static void
-__send_from_cache (const int sk, const uint8_t *key)
-{
-    /* TODO error handling */
-    int cfd = cache_open (key);
-    size_t fsz;
-    cache_fsize (key, &fsz);
-    sendfile (sk, cfd, NULL, fsz);
 }
 
 
@@ -262,10 +251,13 @@ main (int argc, char *argv[])
                         strncat ((char *) addr_port, (char *) srv[1], strlen ((char *) srv[1]));
 
 
-                        /* send from cache, otherwise */
-                        if (cache_lookup (addr_port)) {
+                        /**
+                         * send from cache, otherwise connect to given address
+                         * and port, download data, write to cache, relay back
+                         * to client.
+                         */
+                        if (cache_sendfile (sk, addr_port)) {
                             fprintf (stdout, "cache hit\n");
-                            __send_from_cache (sk, addr_port);
                         } else {
                             fprintf (stdout, "cache miss\n");
 

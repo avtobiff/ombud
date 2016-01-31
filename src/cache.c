@@ -13,6 +13,12 @@
 static uint8_t __cache_basedir[PATH_MAXSIZ + 1] = { 0 };
 
 
+/******************************************************************************
+ *
+ *  Internal helper functions
+ *
+ ******************************************************************************/
+
 /**
  * Calculate hash based on "addr:port"
  */
@@ -104,29 +110,6 @@ cache_init (const uint8_t * cache_basedir)
 
 
 /**
- * Perform a cache lookup.
- */
-int
-cache_lookup (const uint8_t * key)
-{
-    uint8_t hash[HASHLEN] = { 0 };
-    uint8_t cache_file_path[PATH_MAXSIZ + 1] = { 0 };
-    struct stat st;
-
-    __compute_hash (key, hash);
-    __cache_fpath (hash, cache_file_path);
-
-    if (stat ((char *) cache_file_path, &st) != 0) {
-        /* cache miss, file does not exist */
-        return 0;
-    }
-
-    /* cache hit, if file exists and is a regular file */
-    return S_ISREG (st.st_mode);
-}
-
-
-/**
  * Store buf in cache at key.
  */
 int
@@ -159,41 +142,45 @@ cache_write (const uint8_t * key, const uint8_t * buf)
 
 
 /**
- * Calculate cache file size.
+ * Send cache contents at "key" to supplied socket "socket".
  *
- * Note! This is without error handling for missing keys, perform
- * cache_lookup() first to ensure cache existance.
+ * This uses sendfile(2) which shuffles all the data from file to socket in
+ * kernel space.
  */
-void
-cache_fsize (const uint8_t * key, size_t * fsize)
+ssize_t
+cache_sendfile (const int socket, const uint8_t * key)
 {
-    uint8_t hash[HASHLEN]  = { 0 };
-    uint8_t cache_file_path[PATH_MAXSIZ + 1] = { 0 };
-    FILE *fp;
+    uint8_t     hash[HASHLEN] = { 0 };
+    uint8_t     cache_file_path[PATH_MAXSIZ + 1] = { 0 };
+    FILE        *fp;
+    size_t      fsize;
+    ssize_t     sentbytes = 0;
 
     __compute_hash (key, hash);
     __cache_fpath (hash, cache_file_path);
 
-    fp = fopen ((char *) cache_file_path, "r");
+    /* calculate cache content size */
+    if ((fp = fopen ((char *) cache_file_path, "r")) == NULL) {
+        /* cache miss */
+        return 0;
+    }
+
+    /* cache hit, send to supplied socket */
+
+    /* calculate cache file size */
     fseek (fp, 0, SEEK_END);
-    *fsize = ftell (fp);
+    fsize = ftell (fp);
     fclose (fp);
-}
 
+    int fd = open ((char *) cache_file_path, O_RDONLY);
+    while (sentbytes < (ssize_t) fsize) {
+        if ((sentbytes = sendfile (socket, fd, NULL, fsize)) == -1) {
+            perror ("could not send from cache");
+            break;
+        }
+    }
 
-/**
- * Open existing cache file, return file descriptor
- *
- * Note! Data must exist, perform cache_lookup() first.
- */
-int
-cache_open (const uint8_t * key)
-{
-    uint8_t hash[HASHLEN] = { 0 };
-    uint8_t cache_file_path[PATH_MAXSIZ + 1] = { 0 };
+    close (fd);
 
-    __compute_hash (key, hash);
-    __cache_fpath (hash, cache_file_path);
-
-    return open ((char *) cache_file_path, O_RDONLY);
+    return sentbytes;
 }
