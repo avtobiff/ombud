@@ -15,7 +15,6 @@
 
 
 #define PORT    "8090"     /* TODO take this as an command line argument */
-#define BACKLOG 10
 #define BUFSIZE 8192
 
 #define CACHE_BASEDIR    "cache-ombud" /* TODO make this configurable */
@@ -144,7 +143,7 @@ main (int argc, char *argv[])
     freeaddrinfo (srvinfo);
 
     fprintf (stdout, "Listen socket setup...\n");
-    if (listen (listener, BACKLOG) == -1) {
+    if (listen (listener, SOMAXCONN) == -1) {
         exit_errormsg ("could not listen");
     }
 
