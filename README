@@ -13,6 +13,30 @@ a cache miss Ombud connects to the given address and port, reads the
 data, writes it to the cache, and finally relays it back to the client.
 
 
+BUILD
+-----
+First install build dependencies
+
+    sudo apt-get install build-essential libssl-dev
+
+Then build by executing
+
+    make
+
+
+RUN
+---
+Execute Ombud with
+
+    make run
+
+This will start Ombud which listens to the (hard coded) port 8090. The
+cache is created in $PWD/cache-ombud.
+
+NB! The cache is removed from source directory during invokations of
+make clean.
+
+
 ASSUMPTIONS
 -----------
 * Only IPv4, no special care taken into account regarding IPv6.
@@ -46,7 +70,9 @@ POSSIBLE IMPROVEMENTS
 
 * Linking against OpenSSL. If the code is going to be release under the
   GPL an OpenSSL linking exception is required in the license in order
-  to be specific about the user's rights and responsibilities.
+  to be specific about the user's rights and responsibilities. It would
+  of course be possible to use libgcrypt in this case instead,
+  especially since we only use SHA1() because it is simple.
 
 * Make cache directory and listen port configurable from the command
   line with getopt and possibly through a configuration file.
@@ -56,3 +82,9 @@ POSSIBLE IMPROVEMENTS
 
 * More robust error handling, e.g. cache storage breaks between succesful
   lookup and send.
+
+* Of course the standard things: more documentation, configuration file,
+  command line options instead of hard coded values etc.
+
+* Thread safe cache, it is now quite possible to botch it with race conditions
+  etc.
