@@ -26,5 +26,5 @@ clean:
 	rm -f $(OBJS)
 	rm -rf $(CACHE_DIR)
 
-run: all
-	bin/ombud
+run: $(executable)
+	$(executable)
