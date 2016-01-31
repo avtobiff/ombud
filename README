@@ -13,13 +13,15 @@ a cache miss Ombud connects to the given address and port, reads the
 data, writes it to the cache, and finally relays it back to the client.
 
 
-BUILD
------
-First install build dependencies
+BUILD AND REQUIREMENTS
+----------------------
+You need to run Linux 3.9 or later, this is because SO_REUSEPORT.
+
+In order to build, first install build dependencies
 
     sudo apt-get install build-essential libssl-dev
 
-Then build by executing
+then build by executing
 
     make
 
