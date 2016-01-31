@@ -30,16 +30,36 @@ Execute Ombud with
 
     make run
 
-This will start Ombud which listens to the (hard coded) port 8090. The
-cache is created in $PWD/cache-ombud.
+This will start Ombud on the default port 8090. The cache is created in
+$PWD/cache-ombud.
 
 NB! The cache is removed from source directory during invokations of
 make clean.
 
+It is possible to give port number as a command line argument
+
+    bin/ombud 8077
+
+
+DESIGN
+------
+The main function is in the connection handler, which handles client
+connections and executing the client commands (connecting to services)
+and caching/sending back the response. This is based on epoll(2), which
+is Linux specific.
+
+The connection handlers are forked into their own processes, one process
+per CPU core, and the listen sockets are setup with SO_REUSEPORT. This
+will enable all four processes to listen on the same listen socket, and
+the kernel handles distribution of incoming requests. (It is stated that
+SO_REUSEPORT will distribute incoming requests uniformly, which was
+stated not to be the case with threaded acceptors. See Linux kernel
+commit c617f39 for more information.)
+
 
 ASSUMPTIONS
 -----------
-* Only IPv4, no special care taken into account regarding IPv6.
+* Only IPv4, this application knows little to nothing about IPv6.
 
 * Well formed client commands and connectable services are assumed,
   malformed requests and unconnectable hosts are silently dropped.
@@ -88,3 +108,5 @@ POSSIBLE IMPROVEMENTS
 
 * Thread safe cache, it is now quite possible to botch it with race conditions
   etc.
+
+* Toggable DEBUG prints...
