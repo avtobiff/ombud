@@ -25,7 +25,7 @@
 
 
 static int
-setnonblock (int socket)
+mk_nonblock (int socket)
 {
     int flags = fcntl (socket, F_GETFL);
     if (flags < 0) {
@@ -109,7 +109,7 @@ main (int argc, char *argv[])
     for (c = srvinfo; c != NULL; c = c->ai_next) {
         /* setup a non-blocking listen socket */
         listener = socket (c->ai_family, c->ai_socktype, c->ai_protocol);
-        if (setnonblock (listener) < 0) {
+        if (mk_nonblock (listener) < 0) {
             exit_errormsg ("could not make listen socket nonblocking");
         }
 
@@ -185,7 +185,7 @@ main (int argc, char *argv[])
                                         &remoteaddr_len);
 
                     /* enable non-blocking socket */
-                    if (setnonblock (csock) < 0) {
+                    if (mk_nonblock (csock) < 0) {
                         exit_errormsg ("could not make control socket "
                                        "nonblocking");
                     }
