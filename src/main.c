@@ -109,6 +109,58 @@ do_accept (const int listensock, const int epollfd)
 
 
 /**
+ * Process read (client) command.
+ */
+static void
+do_read_cmd (const int cfd)
+{
+    uint8_t buf[BUFLEN] = { 0 };
+    ssize_t readbytes;
+
+    /* read command from client */
+    if ((readbytes = read (cfd, buf, BUFLEN)) < 0) {
+        if (readbytes == 0) {
+            /* EOF, client closed socket */
+            ;
+        } else {
+            perror ("ctrlsock read error");
+        }
+        close (cfd); /* also removes from epoll */
+    }
+    /* send from cache or defer relay */
+    else {
+        uint8_t service[NI_MAXHOST] = { 0 };
+        uint8_t *cr, *nl;
+
+        /* strip \r and \n from command, creating key used in the cache */
+        strncat ((char *) service, (char *) buf, readbytes);
+        if ((cr = (uint8_t *) strrchr ((char *) service, '\r')) != NULL) {
+            *cr = '\0';
+        }
+        if ((nl = (uint8_t *) strrchr ((char *) service, '\n')) != NULL) {
+            *nl = '\0';
+        }
+
+        /* try sending from cache, upon miss defer remote host read */
+        if (!cache_sendfile (cfd, service))
+        {
+            struct command *newcmd =
+                    calloc (1, sizeof (struct command));
+            fprintf (stdout, "defer remote host read\n");
+            /* add command to read remote host data to event queue */
+            newcmd->cmd = READ_REMOTE;
+            newcmd->cfd = cfd;
+            //newcmd->rfd = command->rfd;
+            newcmd->remote = buf;
+
+            /* add command to event queue */
+            //epoll_add (epollfd, newcmd);
+        }
+    }
+}
+
+
+/**
  * Ombud main entry point.
  */
 int
@@ -194,51 +246,7 @@ main (int argc, char *argv[])
             else {
                 switch (command->cmd) {
                     case READ_CMD:
-                        fprintf (stdout, "ctrlsock\n");
-                        uint8_t buf[BUFLEN] = { 0 };
-
-                        ssize_t readbytes;
-
-                        /* read command */
-                        if ((readbytes = read (command->cfd, buf, BUFLEN)) < 0) {
-                            if (readbytes == 0) {
-                                /* EOF, client closed socket */
-                                ;
-                            } else {
-                                perror ("ctrlsock read error");
-                            }
-                            close (command->cfd); /* also removes from epoll */
-                        }
-                        /* send from cache or defer relay */
-                        else {
-                            uint8_t *cr, *nl;
-                            uint8_t service[NI_MAXHOST] = { 0 };
-                            struct command *newcmd =
-                                    calloc (1, sizeof (struct command));
-
-                            strncat ((char *) service, (char *) buf, readbytes);
-                            if ((cr = (uint8_t *) strrchr ((char *) service, '\r')) != NULL) {
-                                *cr = '\0';
-                            }
-                            if ((nl = (uint8_t *) strrchr ((char *) service, '\n')) != NULL) {
-                                *nl = '\0';
-                            }
-
-                            /* try sending from cache, upon miss defer read */
-                            if (!cache_sendfile (command->cfd, service))
-                            {
-                                fprintf (stdout, "defer remote host read\n");
-                                /* add command to read remote host data to event queue */
-                                newcmd->cmd = READ_REMOTE;
-                                newcmd->cfd = command->cfd;
-                                newcmd->rfd = command->rfd;
-                                newcmd->remote = buf;
-
-                                /* add command to event queue */
-                                //epoll_add (epollfd, newcmd);
-                            }
-                            continue;
-                        }
+                        do_read_cmd (command->cfd);
                         break;
 
                     case READ_REMOTE:
