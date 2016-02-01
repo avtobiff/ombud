@@ -6,7 +6,7 @@ CFLAGS  := -g -std=gnu99 -Wall -Wextra -Wpedantic -O2 -Os
 LDFLAGS := $(shell pkg-config --libs openssl)
 
 OBJDIR := src
-OBJS   := $(addprefix $(OBJDIR)/,cache.o main.o)
+OBJS   := $(addprefix $(OBJDIR)/,cache.o netutil.o main.o)
 executable := bin/ombud
 
 
