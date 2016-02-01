@@ -1,6 +1,7 @@
 #pragma once
 
 #include <err.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <stdbool.h>
@@ -18,3 +19,5 @@ extern int mk_nonblock (const int socket);
 extern int setup_listener(const uint8_t * server_port);
 
 extern int sendall (const int socket, const uint8_t * buf, size_t * buflen);
+
+extern int readall (const int socket, uint8_t * buf, size_t * buflen);

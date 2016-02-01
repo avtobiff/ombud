@@ -102,11 +102,11 @@ setup_listener(const uint8_t *server_port)
 int
 sendall (const int socket, const uint8_t *buf, size_t *buflen)
 {
-    int32_t   sentbytes = 0,
-              bytesleft = *buflen,
-              numbytes = 0;
+    ssize_t     sentbytes = 0,
+                bytesleft = *buflen,
+                numbytes = 0;
 
-    while (numbytes < (int32_t) *buflen) {
+    while (numbytes < (ssize_t) *buflen) {
         numbytes = send (socket, (char *) buf + sentbytes, bytesleft, 0);
         if (numbytes < 0) { break; }
         sentbytes += numbytes;
@@ -117,4 +117,33 @@ sendall (const int socket, const uint8_t *buf, size_t *buflen)
     *buflen = sentbytes;
 
     return numbytes == -1 ? -1 : 0;
+}
+
+/**
+ * Read all data from socket to buf, number of bytes read are stored in buflen.
+ */
+int
+readall (const int socket, uint8_t *buf, size_t *buflen)
+{
+    ssize_t     readbytes;
+
+    for (;;) {
+        readbytes = read (socket, buf, sizeof (buf));
+        if (readbytes < 0) {
+            if (errno != EAGAIN) {
+                perror ("readall");
+                goto fin;
+            }
+        }
+        else if (readbytes == 0) {
+            /* EOF, remote closed the connection */
+            goto fin;
+        }
+    }
+
+fin:
+    *buflen = (size_t) readbytes;
+    close (socket);
+
+    return readbytes == -1 ? -1 : 0;
 }

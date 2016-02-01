@@ -1,3 +1,7 @@
+/**
+ * This is Ombud, a command driven caching proxy.
+ */
+
 #include <assert.h>
 #include <err.h>
 #include <fcntl.h>
@@ -7,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -15,64 +20,105 @@
 #include "cache.h"
 
 
-#define DEFAULT_PORT    "8090"
-#define BUFLEN          8192
+#define DEFAULT_PORT        "8090"
+#define BUFLEN              8192
 
-#define CACHE_BASEDIR    "cache-ombud" /* TODO make this configurable */
-#define ADDR_PORT_STRLEN 22
+#define CACHE_BASEDIR       "cache-ombud" /* TODO make this configurable */
+#define ADDR_PORT_STRLEN    22
+
+/* constants we use with epoll */
+#define MAXEVENTS           64
+#define READ_CMD            1
+#define READ_REMOTE         2       /* read remote host data */
+#define RELAY_BACK          4       /* send remote host data to client */
 
 
-/* socket sets and highest file descriptor, for use with select() */
-static fd_set   sockset,
-                ctrlsocks,
-                datasocks;
-
-static int      fdmax;
-
+struct command {
+    uint8_t     cmd;        /* command, READ_REMOTE or RELAY_BACK */
+    int         cfd;        /* client socket */
+    int         rfd;        /* remote host socket */
+    uint8_t     *remote;    /* client command: "ADDRESS:PORT\r\n" */
+    uint8_t     *buf;       /* what was read from remote host */
+};
 
 
 /**
- * Accept incoming connection.
+ * Convenience wrapper for adding epoll events.
  */
 static void
-do_accept (int listensock)
-{
-    int                         client_socket;
-    struct sockaddr_storage     peer_addr;
-    socklen_t                   peer_addr_len;
+epoll_add (int epollfd, struct command *command) {
+    struct epoll_event      event;
+    int                     fd;
 
-
-    peer_addr_len = sizeof (peer_addr);
-    client_socket = accept (listensock, (struct sockaddr *) &peer_addr,
-                            &peer_addr_len);
-
-    /* enable non-blocking socket */
-    if (mk_nonblock (client_socket) < 0) {
-        err (1, "could not make control socket non-blocking");
+    if (command->cmd == READ_REMOTE) {
+        fd = command->rfd;  /* remote host socket */
+    } else {
+        fd = command->cfd;  /* client socket */
     }
 
-    if (client_socket < 0) {
-        perror ("could not accept");
-    } else {
-        /* add accepted client socket to socket set */
-        FD_SET (client_socket, &sockset);
-
-        /* update fdmax if client_socket is larger */
-        if (client_socket > fdmax) {
-            fdmax = client_socket;
-        }
+    event.data.ptr = command;
+    event.events = EPOLLIN | EPOLLET;
+    if (epoll_ctl (epollfd, EPOLL_CTL_ADD, fd, &event) < 0) {
+        err (1, "Could not add command to epoll");
     }
 }
 
 
+/**
+ * Process all incoming connections.
+ */
+static void
+do_accept (const int listensock, const int epollfd)
+{
+    for (;;) {
+        int                         client_socket;
+        struct sockaddr_storage     peer_addr;
+        socklen_t                   peer_addr_len;
+        struct command              *command;
 
 
+        peer_addr_len = sizeof (peer_addr);
+        /* TODO use accept4() instead of accept and mk_nonblock, saves calls to
+         * fcntl and userspace flag bit twiddling. */
+        client_socket = accept (listensock, (struct sockaddr *) &peer_addr,
+                                &peer_addr_len);
+
+        if (client_socket < 0) {
+            if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
+                /* processed all incoming connections */
+                break;
+            } else {
+                perror ("do_accept");
+                break;
+            }
+        }
+
+        if (mk_nonblock (client_socket) < 0) {
+            err (1, "Could not make client socket non-blocking");
+        }
+
+        /* create read client command */
+        command = calloc (1, sizeof (struct command));
+        command->cmd = READ_CMD;
+        command->cfd = client_socket;
+
+        /* add command to epoll event queue */
+        epoll_add (epollfd, command);
+    }
+}
+
+
+/**
+ * Ombud main entry point.
+ */
 int
 main (int argc, char *argv[])
 {
-    int                         listensock;
+    int                         listensock,
+                                epollfd;
 
-    ssize_t                     numbytes;
+    struct epoll_event          event,
+                                *events;
 
     uint8_t                     *server_port;
 
@@ -97,21 +143,118 @@ main (int argc, char *argv[])
 
     /* initialize cache */
     if (cache_init ((const uint8_t *) CACHE_BASEDIR) < 0) {
-        fprintf (stderr, "could not create cache dir\n");
-        exit (EXIT_FAILURE);
+        err (1, "Could not create cache dir");
+    }
+    fprintf (stdout, "Initialized cache...\n");
+
+    /* initialize epoll */
+    if ((epollfd = epoll_create1 (0)) < 0) {
+        err (1, "Could not initialize epoll");
     }
 
-    /* clear socket sets */
-    FD_ZERO (&sockset);
-    FD_ZERO (&ctrlsocks);
-    FD_ZERO (&datasocks);
+    /* add epoll event for handling listen socket */
+    struct command *lcmd = calloc (1, sizeof (struct command));
+    lcmd->cfd = listensock;
+    epoll_add (epollfd, lcmd);
 
-    /* add listensock to client socket set, largest fd is listensock so far */
-    FD_SET (listensock, &sockset);
-    fdmax = listensock;
+    /* event buffer */
+    events = calloc (MAXEVENTS, sizeof (event));
 
     fprintf (stdout, "Entering main loop...\n");
     for (;;) {
+        /* block until we get some events to process */
+        int numevents = epoll_wait (epollfd, events, MAXEVENTS, -1);
+        struct command *command;
+
+        /* process all events */
+        for (int i = 0; i < numevents; i++) {
+            /* get command */
+            command = events[i].data.ptr;
+            fprintf (stdout, "command->cmd = %d\n", command->cmd);
+
+            /* epoll error */
+            if ((events[i].events & EPOLLERR) ||
+                (events[i].events & EPOLLHUP) ||
+                (!(events[i].events & EPOLLIN)))
+            {
+                /* notified but nothing ready for processing */
+                warn ("epoll error\n");
+                close (command->cfd);
+                close (command->rfd);
+                continue;
+            }
+            /* ACCEPT */
+            else if (command->cfd == listensock) {
+                do_accept (listensock, epollfd);
+                /* processed all incoming events on listensock, continue to
+                 * next event. */
+                continue;
+            }
+            /* HANDLE COMMANDS */
+            else {
+                switch (command->cmd) {
+                    case READ_CMD:
+                        fprintf (stdout, "ctrlsock\n");
+                        uint8_t buf[BUFLEN] = { 0 };
+
+                        ssize_t readbytes;
+
+                        /* read command */
+                        if ((readbytes = read (command->cfd, buf, BUFLEN)) < 0) {
+                            if (readbytes == 0) {
+                                /* EOF, client closed socket */
+                                ;
+                            } else {
+                                perror ("ctrlsock read error");
+                            }
+                            close (command->cfd); /* also removes from epoll */
+                        }
+                        /* send from cache or defer relay */
+                        else {
+                            uint8_t *cr, *nl;
+                            uint8_t service[NI_MAXHOST] = { 0 };
+                            struct command *newcmd =
+                                    calloc (1, sizeof (struct command));
+
+                            strncat ((char *) service, (char *) buf, readbytes);
+                            if ((cr = (uint8_t *) strrchr ((char *) service, '\r')) != NULL) {
+                                *cr = '\0';
+                            }
+                            if ((nl = (uint8_t *) strrchr ((char *) service, '\n')) != NULL) {
+                                *nl = '\0';
+                            }
+
+                            /* try sending from cache, upon miss defer read */
+                            if (!cache_sendfile (command->cfd, service))
+                            {
+                                fprintf (stdout, "defer remote host read\n");
+                                /* add command to read remote host data to event queue */
+                                newcmd->cmd = READ_REMOTE;
+                                newcmd->cfd = command->cfd;
+                                newcmd->rfd = command->rfd;
+                                newcmd->remote = buf;
+
+                                /* add command to event queue */
+                                //epoll_add (epollfd, newcmd);
+                            }
+                            continue;
+                        }
+                        break;
+
+                    case READ_REMOTE:
+                        fprintf (stdout, "read remote\n");
+                        break;
+
+                    case RELAY_BACK:
+                        fprintf (stdout, "relay back\n");
+                        break;
+
+                    default:
+                        break;
+                }
+            }
+        }
+#if 0
         /* copy socket set for use with select */
         ctrlsocks = sockset;
         datasocks = sockset;
@@ -297,7 +440,12 @@ main (int argc, char *argv[])
 #endif
             }
         }
+#endif
     }
 
-    return 0;
+
+    free (events);
+    close (listensock);
+
+    return EXIT_SUCCESS;
 }
