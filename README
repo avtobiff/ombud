@@ -7,11 +7,6 @@ when Ombud recieves a command it connects to the given address and port,
 reads whatever is sent, caches it on disk, and relays it back to the
 client.
 
-When clients request data from address:port a cache lookup is performed.
-On a cache hit the contents are sent to the client with sendfile(2). On
-a cache miss Ombud connects to the given address and port, reads the
-data, writes it to the cache, and finally relays it back to the client.
-
 
 BUILD AND REQUIREMENTS
 ----------------------
@@ -57,6 +52,11 @@ the kernel handles distribution of incoming requests. (It is stated that
 SO_REUSEPORT will distribute incoming requests uniformly, which was
 stated not to be the case with threaded acceptors. See Linux kernel
 commit c617f39 for more information.)
+
+When clients request data from address:port a cache lookup is performed.
+On a cache hit the contents are sent to the client with sendfile(2). On
+a cache miss Ombud connects to the given address and port, reads the
+data, writes it to the cache, and finally relays it back to the client.
 
 
 ASSUMPTIONS
