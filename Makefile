@@ -16,6 +16,7 @@ CACHE_DIR := cache-ombud
 all: $(executable)
 
 $(executable): $(OBJS)
+	mkdir -p bin
 	$(CC) $(INCLUDE) $(CFLAGS) -o $(executable) $(OBJS) $(LDFLAGS)
 
 src/%.o: src/%.c

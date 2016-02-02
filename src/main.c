@@ -6,6 +6,7 @@
 #include <err.h>
 #include <fcntl.h>
 #include <netdb.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -196,6 +197,29 @@ __connect_remote_host (const uint8_t *remote_srv, const ssize_t len)
 
 
 /**
+ * Strip \r and \n from command, creating key used in the cache and also string
+ * used when connecting to remote host..
+ *
+ * Handles rightmost \r and \n if they exist.
+ */
+static void
+__format_service (const uint8_t *buf, const ssize_t buflen, uint8_t *service)
+{
+    uint8_t *cr, *nl;
+
+    strncat ((char *) service, (char *) buf, buflen);
+    fprintf (stdout, "serivceuuu = %s\n", service);
+    fprintf (stdout, "buuu = %s\n", buf);
+    if ((cr = (uint8_t *) strrchr ((char *) service, '\r')) != NULL) {
+        *cr = '\0';
+    }
+    if ((nl = (uint8_t *) strrchr ((char *) service, '\n')) != NULL) {
+        *nl = '\0';
+    }
+}
+
+
+/**
  * Process read (client) command.
  */
 static void
@@ -216,18 +240,9 @@ do_read_cmd (const int epollfd, struct command * command)
     }
     /* send from cache or defer relay */
     else {
-        uint8_t *service = calloc (1, NI_MAXHOST);
-        uint8_t *cr, *nl;
-
-        /* strip \r and \n from command, creating key used in the cache */
-        strncat ((char *) service, (char *) buf, readbytes);
-        if ((cr = (uint8_t *) strrchr ((char *) service, '\r')) != NULL) {
-            *cr = '\0';
-        }
-        if ((nl = (uint8_t *) strrchr ((char *) service, '\n')) != NULL) {
-            *nl = '\0';
-        }
-
+        uint8_t *service = calloc (1, readbytes);
+        __format_service (buf, readbytes, service);
+        fprintf (stdout, "service = %s\n", (char *) service);
         /* try sending from cache, upon miss defer remote host read */
         if (!cache_sendfile (command->cfd, service))
         {
@@ -238,7 +253,6 @@ do_read_cmd (const int epollfd, struct command * command)
             }
 
             struct command *newcmd = calloc (1, sizeof (struct command));
-
             /* add command to read remote host data to event queue */
             newcmd->cmd = READ_REMOTE;
             newcmd->cfd = command->cfd;
@@ -293,6 +307,18 @@ do_read_remote (struct command *command, uint8_t *buf, size_t *buflen)
 
 
 /**
+ * Signal handler, exits on SIGINT.
+ */
+static void
+sighandler (int signal)
+{
+    if (signal == SIGINT) {
+        exit (EXIT_FAILURE);
+    }
+}
+
+
+/**
  * Ombud main entry point.
  */
 int
@@ -306,6 +332,8 @@ main (int argc, char *argv[])
 
     uint8_t                     *server_port;
 
+
+    signal (SIGINT, sighandler);
 
     /* get (valid) port from command line or use default port */
     if (argc == 2 && atoi (argv[1]) < 65536) {

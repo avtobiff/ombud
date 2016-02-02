@@ -127,3 +127,5 @@ POSSIBLE IMPROVEMENTS
   command line options instead of hard coded values etc.
 
 * Toggable DEBUG prints...
+
+* Input data validation, little to none is done now. Dangerous!
