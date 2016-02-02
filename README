@@ -68,6 +68,10 @@ SO_REUSEPORT will distribute incoming requests uniformly, which was
 stated not to be the case with threaded acceptors. See Linux kernel
 commit c617f39 for more information.)
 
+    NB! Using SO_REUSEPORT is a little bit experimentation, that wasn't
+    thouroghly tested for corner cases as the one process implementation
+    was. If it doesn't work please remove it and run one process only.
+
 When clients request data from address:port a cache lookup is performed.
 On a cache hit the contents are sent to the client with sendfile(2),
 which shuffles data from a file descriptor to a socket without leaving
