@@ -38,6 +38,8 @@ It is possible to give port number as a command line argument
 
     bin/ombud 8077
 
+Quit by sending SIGINT, i.e. pressing Ctrl-C.
+
 
 USAGE
 -----
@@ -100,10 +102,11 @@ ASSUMPTIONS
 
 POSSIBLE IMPROVEMENTS
 ---------------------
-* Using libevent instead, for portability. Given time I would have tried
-  libuv, it looks interesting.
+* Use libevent instead, for portability and also possibly a nice
+  framework for event driven programming. Given time I would have tried
+  libuv from Joyent, it looks interesting.
 
-* Using a thread pool for incoming connections, workers etc.
+* Use a thread pool for incoming connections, workers etc.
 
 * In order to make a more efficient cache, hostnames could be resolved
   to ip addresses before they are used as part of the key.
@@ -129,3 +132,14 @@ POSSIBLE IMPROVEMENTS
 * Toggable DEBUG prints...
 
 * Input data validation, little to none is done now. Dangerous!
+
+* Possibly it clutters down code casting between uint8_t and char all
+  the time... Interfaces are clean though, clutter comes from functions
+  that use (char *).
+
+* Tests. Unit tests with e.g. Google Test, functional tests etc. TDD is
+  really nice. This time around though everything was built in a quick
+  prototype fashion.
+
+* Mixing naming convention of static functions in different files. It
+  would be good to use consistent coding style guide lines.
