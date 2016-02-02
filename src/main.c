@@ -2,12 +2,10 @@
  * This is Ombud, a command driven caching proxy.
  */
 
-#include <assert.h>
 #include <err.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <signal.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,11 +13,14 @@
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "netutil.h"
 #include "cache.h"
 
+
+#define NUMCHILDS           sysconf (_SC_NPROCESSORS_ONLN)  /* cpu cores */
 
 #define DEFAULT_PORT        "8090"
 #define BUFLEN              8192
@@ -40,6 +41,10 @@ struct command {
     int         rfd;        /* remote host socket */
     uint8_t     *service;   /* client command: "ADDRESS:PORT\r\n" */
 };
+
+
+/* book keeping of child processes */
+static pid_t *child_pids;
 
 
 /**
@@ -330,16 +335,22 @@ static void
 sighandler (int signal)
 {
     if (signal == SIGINT) {
-        exit (EXIT_SUCCESS);
+        for (int i = 0; i < NUMCHILDS; i++) {
+            if (child_pids[i] != 0) {
+                kill (child_pids[i], SIGKILL);
+            }
+        }
     }
 }
+
+
 
 
 /**
  * Ombud main entry point.
  */
-int
-main (int argc, char *argv[])
+static int
+child (const int8_t index, const uint8_t *server_port)
 {
     int                         listensock,
                                 epollfd;
@@ -347,34 +358,20 @@ main (int argc, char *argv[])
     struct epoll_event          event,
                                 *events;
 
-    uint8_t                     *server_port;
-
-
-    signal (SIGINT, sighandler);
-
-    /* get (valid) port from command line or use default port */
-    if (argc == 2 && atoi (argv[1]) < 65536) {
-        size_t portlen = strlen (argv[1]);
-        server_port = calloc (1, portlen);
-        strncat ((char *) server_port, argv[1], portlen);
-    } else {
-        server_port = calloc (1, 5);
-        strcat ((char *) server_port, DEFAULT_PORT);
-    }
 
     /* setup listen socket */
     if ((listensock = setup_listener (server_port)) < 0) {
         err (1, "Could not setup listen socket");
     }
 
-    fprintf (stdout, "Listening on port %s...\n", (char *) server_port);
-    free (server_port);
+    fprintf (stdout, "proc %d: Listening on port %s...\n",
+             index, (char *) server_port);
 
     /* initialize cache */
     if (cache_init ((const uint8_t *) CACHE_BASEDIR) < 0) {
         err (1, "Could not create cache dir");
     }
-    fprintf (stdout, "Initialized cache...\n");
+    fprintf (stdout, "proc %d: Initialized cache...\n", index);
 
     /* initialize epoll */
     if ((epollfd = epoll_create1 (0)) < 0) {
@@ -389,7 +386,7 @@ main (int argc, char *argv[])
     /* event buffer */
     events = calloc (MAXEVENTS, sizeof (event));
 
-    fprintf (stdout, "Entering main loop...\n");
+    fprintf (stdout, "proc %d: Entering main loop...\n", index);
     for (;;) {
         /* block until we get some events to process */
         int numevents = epoll_wait (epollfd, events, MAXEVENTS, -1);
@@ -447,6 +444,55 @@ main (int argc, char *argv[])
 
     free (events);
     close (listensock);
+
+    return EXIT_SUCCESS;
+}
+
+
+/**
+ * Main server event loop.
+ */
+int
+main (int argc, char *argv[])
+{
+    int             status;
+
+    uint8_t         *server_port;
+
+
+    signal (SIGINT, sighandler);
+
+    /* get (valid) port from command line or use default port */
+    if (argc == 2 && atoi (argv[1]) < 65536) {
+        size_t portlen = strlen (argv[1]);
+        server_port = calloc (1, portlen);
+        strncat ((char *) server_port, argv[1], portlen);
+    } else {
+        server_port = calloc (1, 5);
+        strcat ((char *) server_port, DEFAULT_PORT);
+    }
+
+    child_pids = calloc (NUMCHILDS, sizeof (pid_t));
+
+    for (int8_t i = 0; i < NUMCHILDS; i++) {
+        pid_t pid = fork ();
+
+        if (pid == 0) {
+            child (i, server_port);
+            return EXIT_SUCCESS;
+        }
+        else if (pid < 0) {
+            err (1, "fork");
+        } else {
+            /* parent process saves child pids */
+            child_pids[i] = pid;
+        }
+    }
+
+    wait (&status);
+
+    free (child_pids);
+
 
     return EXIT_SUCCESS;
 }

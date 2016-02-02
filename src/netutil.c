@@ -28,7 +28,7 @@ mk_nonblock (const int socket)
  * Setup listen socket and bind to it.
  */
 int
-setup_listener(const uint8_t *server_port)
+setup_listener (const uint8_t *server_port)
 {
     struct addrinfo     hints,
                         *srvinfo,
@@ -64,11 +64,11 @@ setup_listener(const uint8_t *server_port)
             continue;
         }
 
-        /* enable reuse of sockets busy in TIME_WAIT */
+        /* enable several processes listening on the same port */
         int true_ = true;
-        if (setsockopt (listensock, SOL_SOCKET, SO_REUSEADDR, &true_,
+        if (setsockopt (listensock, SOL_SOCKET, SO_REUSEPORT, &true_,
                         sizeof (int)) < 0) {
-            err (1, "could not set SO_REUSEADDR on listen socket");
+            err (1, "could not set SO_REUSEPORT on listen socket");
         }
 
         if (bind (listensock, c->ai_addr, c->ai_addrlen) < 0) {
