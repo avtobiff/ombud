@@ -122,12 +122,46 @@ do_accept (const int listensock, const int epollfd)
 }
 
 
+/**
+ * Extract remote host and port from remote service string.
+ */
 static int
-__connect_remote_host (const uint8_t *remote_srv, const ssize_t len)
+extract_host_port (const uint8_t *remote_srv, const ssize_t len,
+                     uint8_t *remote_host, uint8_t *remote_port)
 {
-    uint8_t             *remote_host,
-                        *remote_port,
-                        *s;
+    uint8_t *s, *h, *p;
+
+    s = h = (uint8_t *) strndup ((char *) remote_srv, len);
+    s += len;
+    /* search for ':' from the back of supplied string, stop when we searched
+     * through everything. */
+    for (; (*(--s) != ':') && (s != h) ;);
+
+    if (s == remote_host) {
+        warn ("Invalid argument %s", remote_host);
+        return -1;
+    }
+
+    /* split supplied string into host and port */
+    *s = '\0';
+    p = s + 1;
+
+    /* "return values", remote host and port */
+    strncat ((char *) remote_host, (char *) h, strlen ((char *) h));
+    strncat ((char *) remote_port, (char *) p, strlen ((char *) p));
+
+    return 1;
+}
+
+
+/**
+ * Connect to remote host, return socket.
+ */
+static int
+connect_remote_host (const uint8_t *remote_srv, const ssize_t len)
+{
+    uint8_t             *remote_host = calloc (1, NI_MAXHOST),
+                        *remote_port = calloc (1, NI_MAXSERV);
 
     struct addrinfo     hints,
                         *remoteinfo,
@@ -137,22 +171,9 @@ __connect_remote_host (const uint8_t *remote_srv, const ssize_t len)
 
 
     /* extract remote host and port as strings */
-    s = remote_host = (uint8_t *) strndup ((char *) remote_srv, len);
-    s += len;
-    /* search for ':' from the back of supplied string, stop when we searched
-     * through everything. */
-    for (; (*(--s) != ':') && (s != remote_host) ;);
-
-    if (s == remote_host) {
-        warn ("Invalid argument %s", remote_host);
+    if (extract_host_port (remote_srv, len, remote_host, remote_port) < 0) {
         return -1;
     }
-
-    /* split supplied string into host and port */
-    *s = '\0';
-    remote_port = s + 1;
-
-    //uint8_t buf[BUFLEN] = { 0 };
 
     bzero (&hints, sizeof (struct addrinfo));
     hints.ai_family   = AF_INET;        /* IPv4 */
@@ -184,7 +205,6 @@ __connect_remote_host (const uint8_t *remote_srv, const ssize_t len)
 
     if (rp == NULL) {
         /* could not connect, silently drop this. */
-        /* TODO remove from epoll */
         return -1;
     }
 
@@ -203,13 +223,11 @@ __connect_remote_host (const uint8_t *remote_srv, const ssize_t len)
  * Handles rightmost \r and \n if they exist.
  */
 static void
-__format_service (const uint8_t *buf, const ssize_t buflen, uint8_t *service)
+format_service (const uint8_t *buf, const ssize_t buflen, uint8_t *service)
 {
     uint8_t *cr, *nl;
 
     strncat ((char *) service, (char *) buf, buflen);
-    fprintf (stdout, "serivceuuu = %s\n", service);
-    fprintf (stdout, "buuu = %s\n", buf);
     if ((cr = (uint8_t *) strrchr ((char *) service, '\r')) != NULL) {
         *cr = '\0';
     }
@@ -241,13 +259,12 @@ do_read_cmd (const int epollfd, struct command * command)
     /* send from cache or defer relay */
     else {
         uint8_t *service = calloc (1, readbytes);
-        __format_service (buf, readbytes, service);
-        fprintf (stdout, "service = %s\n", (char *) service);
+        format_service (buf, readbytes, service);
         /* try sending from cache, upon miss defer remote host read */
         if (!cache_sendfile (command->cfd, service))
         {
             int rsock;
-            if ((rsock = __connect_remote_host (service, readbytes)) < 0) {
+            if ((rsock = connect_remote_host (service, readbytes)) < 0) {
                 warn ("could not connect to host");
                 return;
             }
@@ -313,7 +330,7 @@ static void
 sighandler (int signal)
 {
     if (signal == SIGINT) {
-        exit (EXIT_FAILURE);
+        exit (EXIT_SUCCESS);
     }
 }
 
