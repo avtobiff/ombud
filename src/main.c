@@ -38,13 +38,11 @@ struct command {
     int         cfd;        /* client socket */
     int         rfd;        /* remote host socket */
     uint8_t     *service;   /* client command: "ADDRESS:PORT\r\n" */
-    uint8_t     *buf;       /* what was read from remote host */
-    ssize_t     buflen;     /* length of buf */
 };
 
 
 /**
- * Convenience wrapper for adding epoll events.
+ * Convenience wrapper for adding and modifying epoll events.
  */
 static void
 epoll_add (int epollfd, struct command *command) {
@@ -61,6 +59,20 @@ epoll_add (int epollfd, struct command *command) {
     event.events = EPOLLIN | EPOLLET;
     if (epoll_ctl (epollfd, EPOLL_CTL_ADD, fd, &event) < 0) {
         err (1, "Could not add command to epoll");
+    }
+}
+
+/**
+ * Used for toggling client socket connection between READ_CMD and READ_REMOTE.
+ */
+static void
+epoll_mod (int epollfd, struct command *command) {
+    struct epoll_event      event;
+
+    event.data.ptr = command;
+    event.events = EPOLLIN | EPOLLET;
+    if (epoll_ctl (epollfd, EPOLL_CTL_MOD, command->cfd, &event) < 0) {
+        err (1, "Could not modify command to epoll");
     }
 }
 
@@ -123,7 +135,6 @@ __connect_remote_host (const uint8_t *remote_srv, const ssize_t len)
     int                 rsock;
 
 
-    printf ("extracting remote host\n");
     /* extract remote host and port as strings */
     s = remote_host = (uint8_t *) strndup ((char *) remote_srv, len);
     s += len;
@@ -135,8 +146,6 @@ __connect_remote_host (const uint8_t *remote_srv, const ssize_t len)
         warn ("Invalid argument %s", remote_host);
         return -1;
     }
-
-    printf ("extracted remote host\n");
 
     /* split supplied string into host and port */
     *s = '\0';
@@ -178,9 +187,6 @@ __connect_remote_host (const uint8_t *remote_srv, const ssize_t len)
         return -1;
     }
 
-    fprintf (stdout, "connected to %s:%s with socket %d\n",
-             (char *) remote_host, (char *) remote_port, rsock);
-
     if (mk_nonblock (rsock) < 0) {
         err (1, "could not make data socket nonblocking");
     }
@@ -193,28 +199,26 @@ __connect_remote_host (const uint8_t *remote_srv, const ssize_t len)
  * Process read (client) command.
  */
 static void
-do_read_cmd (const int epollfd, const int cfd)
+do_read_cmd (const int epollfd, struct command * command)
 {
     uint8_t buf[BUFLEN] = { 0 };
     ssize_t readbytes;
 
-    printf ("do_read_cmd\n");
     /* read command from client */
-    if ((readbytes = read (cfd, buf, BUFLEN)) < 0) {
+    if ((readbytes = read (command->cfd, buf, BUFLEN)) <= 0) {
         if (readbytes == 0) {
             /* EOF, client closed socket */
             ;
         } else {
             perror ("ctrlsock read error");
         }
-        close (cfd); /* also removes from epoll */
+        close (command->cfd); /* also removes from epoll */
     }
     /* send from cache or defer relay */
     else {
-        uint8_t service[NI_MAXHOST] = { 0 };
+        uint8_t *service = calloc (1, NI_MAXHOST);
         uint8_t *cr, *nl;
 
-        printf ("do_read_cmd: read buffer\n");
         /* strip \r and \n from command, creating key used in the cache */
         strncat ((char *) service, (char *) buf, readbytes);
         if ((cr = (uint8_t *) strrchr ((char *) service, '\r')) != NULL) {
@@ -225,27 +229,32 @@ do_read_cmd (const int epollfd, const int cfd)
         }
 
         /* try sending from cache, upon miss defer remote host read */
-        if (!cache_sendfile (cfd, service))
+        if (!cache_sendfile (command->cfd, service))
         {
-            printf ("do_read_cmd: cache miss\n");
             int rsock;
             if ((rsock = __connect_remote_host (service, readbytes)) < 0) {
                 warn ("could not connect to host");
                 return;
             }
 
-            struct command *newcmd =
-                    calloc (1, sizeof (struct command));
+            struct command *newcmd = calloc (1, sizeof (struct command));
 
             /* add command to read remote host data to event queue */
             newcmd->cmd = READ_REMOTE;
-            newcmd->cfd = cfd;
+            newcmd->cfd = command->cfd;
             newcmd->rfd = rsock;
             newcmd->service = service;
 
             /* add command to event queue */
             epoll_add (epollfd, newcmd);
         }
+
+        struct command *readcmd = calloc (1, sizeof (struct command));
+
+        /* back to READ_CMD */
+        readcmd->cmd = READ_CMD;
+        readcmd->cfd = command->cfd;
+        epoll_mod (epollfd, readcmd);
     }
 }
 
@@ -254,15 +263,12 @@ do_read_cmd (const int epollfd, const int cfd)
  * Read from remote host.
  */
 static void
-do_read_remote (const int epollfd, struct command *command, uint8_t *buf)
+do_read_remote (struct command *command, uint8_t *buf, size_t *buflen)
 {
     ssize_t readbytes;
-    struct epoll_event event;
-
-    fprintf (stdout, "do read remote\n");
 
     /* recv on remote data socket */
-    if ((readbytes = read (command->rfd, buf, sizeof (buf))) <= 0) {
+    if ((readbytes = read (command->rfd, buf, BUFLEN)) <= 0) {
         /* connection closed or socket error */
         if (readbytes == 0) {
             /* EOF, remote host closed socket */
@@ -274,16 +280,15 @@ do_read_remote (const int epollfd, struct command *command, uint8_t *buf)
         close (command->rfd);
     }
 
-    fprintf (stdout, "%s => %s", command->service, buf);
-
     if (cache_write (command->service, buf, readbytes) < 0) {
         warn ("Could not write to cache");
     }
 
+    free (command->service);
+    free (command);
 
-    /* add command to read remote host data to event queue */
-    command->buf = buf;
-    command->buflen = readbytes;
+    /* "return value" read bytes */
+    *buflen = readbytes;
 }
 
 
@@ -349,7 +354,6 @@ main (int argc, char *argv[])
         for (int i = 0; i < numevents; i++) {
             /* get command */
             command = events[i].data.ptr;
-            fprintf (stdout, "command->cmd = %d\n", command->cmd);
 
             /* epoll error */
             if ((events[i].events & EPOLLERR) ||
@@ -373,16 +377,18 @@ main (int argc, char *argv[])
             else {
                 switch (command->cmd) {
                     case READ_CMD:
-                        fprintf (stdout, "read cmd\n");
-                        do_read_cmd (epollfd, command->cfd);
+                        do_read_cmd (epollfd, command);
                         break;
 
                     case READ_REMOTE:
-                        fprintf (stdout, "read remote\n");
+                        ;   /* hack needed for variable defs inside switch */
                         uint8_t buf[BUFLEN] = { 0 };
                         size_t buflen;
-                        do_read_remote (epollfd, command, buf);
-                        if (sendall (command->cfd, command->buf, &buflen) < 0) {
+                        /* command is free'd in d_r_r() */
+                        int cfd = command->cfd;
+
+                        do_read_remote (command, buf, &buflen);
+                        if (sendall (cfd, buf, &buflen) < 0) {
                             warn ("Could not relay back data to client");
                         }
                         break;
