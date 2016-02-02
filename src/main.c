@@ -37,8 +37,9 @@ struct command {
     uint8_t     cmd;        /* command, READ_REMOTE or RELAY_BACK */
     int         cfd;        /* client socket */
     int         rfd;        /* remote host socket */
-    uint8_t     *remote;    /* client command: "ADDRESS:PORT\r\n" */
+    uint8_t     *service;   /* client command: "ADDRESS:PORT\r\n" */
     uint8_t     *buf;       /* what was read from remote host */
+    ssize_t     buflen;     /* length of buf */
 };
 
 
@@ -108,15 +109,96 @@ do_accept (const int listensock, const int epollfd)
 }
 
 
+static int
+__connect_remote_host (const uint8_t *remote_srv, const ssize_t len)
+{
+    uint8_t             *remote_host,
+                        *remote_port,
+                        *s;
+
+    struct addrinfo     hints,
+                        *remoteinfo,
+                        *rp;
+
+    int                 rsock;
+
+
+    printf ("extracting remote host\n");
+    /* extract remote host and port as strings */
+    s = remote_host = (uint8_t *) strndup ((char *) remote_srv, len);
+    s += len;
+    /* search for ':' from the back of supplied string, stop when we searched
+     * through everything. */
+    for (; (*(--s) != ':') && (s != remote_host) ;);
+
+    if (s == remote_host) {
+        warn ("Invalid argument %s", remote_host);
+        return -1;
+    }
+
+    printf ("extracted remote host\n");
+
+    /* split supplied string into host and port */
+    *s = '\0';
+    remote_port = s + 1;
+
+    //uint8_t buf[BUFLEN] = { 0 };
+
+    bzero (&hints, sizeof (struct addrinfo));
+    hints.ai_family   = AF_INET;        /* IPv4 */
+    hints.ai_socktype = SOCK_STREAM;    /* TCP */
+
+    int r;
+    if ((r = getaddrinfo ((char *) remote_host, (char *) remote_port,
+                          &hints, &remoteinfo)) != 0) {
+        warn ("getaddrinfo: %s", gai_strerror (r));
+        return -1;
+    }
+
+    for (rp = remoteinfo; rp != NULL; rp++) {
+        if ((rsock = socket (rp->ai_family, rp->ai_socktype,
+                             rp->ai_protocol)) < 0) {
+            /* don't continue if we could not establish a socket connection */
+            rp = NULL;
+            break;
+        }
+
+        if (connect (rsock, rp->ai_addr, rp->ai_addrlen) < 0) {
+            close (rsock);
+            warn ("data: connect");
+            continue;
+        }
+
+        break;
+    }
+
+    if (rp == NULL) {
+        /* could not connect, silently drop this. */
+        /* TODO remove from epoll */
+        return -1;
+    }
+
+    fprintf (stdout, "connected to %s:%s with socket %d\n",
+             (char *) remote_host, (char *) remote_port, rsock);
+
+    if (mk_nonblock (rsock) < 0) {
+        err (1, "could not make data socket nonblocking");
+    }
+
+    return rsock;
+}
+
+
 /**
  * Process read (client) command.
  */
 static void
-do_read_cmd (const int cfd)
+do_read_cmd (const int epollfd, const int cfd)
 {
     uint8_t buf[BUFLEN] = { 0 };
     ssize_t readbytes;
 
+    printf ("do_read_cmd\n");
     /* read command from client */
     if ((readbytes = read (cfd, buf, BUFLEN)) < 0) {
         if (readbytes == 0) {
@@ -132,6 +214,7 @@ do_read_cmd (const int cfd)
         uint8_t service[NI_MAXHOST] = { 0 };
         uint8_t *cr, *nl;
 
+        printf ("do_read_cmd: read buffer\n");
         /* strip \r and \n from command, creating key used in the cache */
         strncat ((char *) service, (char *) buf, readbytes);
         if ((cr = (uint8_t *) strrchr ((char *) service, '\r')) != NULL) {
@@ -144,19 +227,63 @@ do_read_cmd (const int cfd)
         /* try sending from cache, upon miss defer remote host read */
         if (!cache_sendfile (cfd, service))
         {
+            printf ("do_read_cmd: cache miss\n");
+            int rsock;
+            if ((rsock = __connect_remote_host (service, readbytes)) < 0) {
+                warn ("could not connect to host");
+                return;
+            }
+
             struct command *newcmd =
                     calloc (1, sizeof (struct command));
-            fprintf (stdout, "defer remote host read\n");
+
             /* add command to read remote host data to event queue */
             newcmd->cmd = READ_REMOTE;
             newcmd->cfd = cfd;
-            //newcmd->rfd = command->rfd;
-            newcmd->remote = buf;
+            newcmd->rfd = rsock;
+            newcmd->service = service;
 
             /* add command to event queue */
-            //epoll_add (epollfd, newcmd);
+            epoll_add (epollfd, newcmd);
         }
     }
+}
+
+
+/**
+ * Read from remote host.
+ */
+static void
+do_read_remote (const int epollfd, struct command *command, uint8_t *buf)
+{
+    ssize_t readbytes;
+    struct epoll_event event;
+
+    fprintf (stdout, "do read remote\n");
+
+    /* recv on remote data socket */
+    if ((readbytes = read (command->rfd, buf, sizeof (buf))) <= 0) {
+        /* connection closed or socket error */
+        if (readbytes == 0) {
+            /* EOF, remote host closed socket */
+        } else {
+            perror ("data recv error");
+        }
+
+        /* close socket socket to remote host */
+        close (command->rfd);
+    }
+
+    fprintf (stdout, "%s => %s", command->service, buf);
+
+    if (cache_write (command->service, buf, readbytes) < 0) {
+        warn ("Could not write to cache");
+    }
+
+
+    /* add command to read remote host data to event queue */
+    command->buf = buf;
+    command->buflen = readbytes;
 }
 
 
@@ -230,7 +357,7 @@ main (int argc, char *argv[])
                 (!(events[i].events & EPOLLIN)))
             {
                 /* notified but nothing ready for processing */
-                warn ("epoll error\n");
+                warn ("epoll error");
                 close (command->cfd);
                 close (command->rfd);
                 continue;
@@ -246,15 +373,18 @@ main (int argc, char *argv[])
             else {
                 switch (command->cmd) {
                     case READ_CMD:
-                        do_read_cmd (command->cfd);
+                        fprintf (stdout, "read cmd\n");
+                        do_read_cmd (epollfd, command->cfd);
                         break;
 
                     case READ_REMOTE:
                         fprintf (stdout, "read remote\n");
-                        break;
-
-                    case RELAY_BACK:
-                        fprintf (stdout, "relay back\n");
+                        uint8_t buf[BUFLEN] = { 0 };
+                        size_t buflen;
+                        do_read_remote (epollfd, command, buf);
+                        if (sendall (command->cfd, command->buf, &buflen) < 0) {
+                            warn ("Could not relay back data to client");
+                        }
                         break;
 
                     default:
@@ -262,195 +392,7 @@ main (int argc, char *argv[])
                 }
             }
         }
-#if 0
-        /* copy socket set for use with select */
-        ctrlsocks = sockset;
-        datasocks = sockset;
-
-        if (select (fdmax + 1, &ctrlsocks, NULL, NULL, NULL) < 0) {
-            err (1, "select sockset");
-        }
-
-        /* loop through all existing connections for data to read */
-        for (int sk = 0; sk <= fdmax; sk++) {
-            /* found one socket to read from */
-            if (FD_ISSET (sk, &ctrlsocks)) {
-                if (sk == listensock) {
-                    /* accept new connection */
-                    do_accept (sk);
-                } else {
-                    /* handle data from client or remote host */
-                    uint8_t buf[BUFLEN] = { 0 };
-                    if ((numbytes = recv(sk, buf, sizeof (buf), 0)) <= 0) {
-                        /* connection closed or socket error */
-                        if (numbytes == 0) {
-                            fprintf (stdout, "socket %d closed\n", sk);
-                        } else {
-                            perror ("control recv error");
-                        }
-
-                        /* close socket and remove it from socket set */
-                        close (sk);
-                        FD_CLR (sk, &sockset);
-                    } else {
-                        /* connect to client supplied service */
-
-                        uint8_t *tok, *s, *orig, srv[3][16] = {0}, i = 0;
-
-                        /* save original string for freeing */
-                        orig = s = (uint8_t *) strdup((char *) buf);
-                        assert (s != NULL);
-
-                        while ((tok = (uint8_t*) strsep (
-                                        (char **) &s, ":\r\n")) != NULL) {
-                            strcpy ((char *) srv[i++], (char *) tok);
-                        }
-
-                        free (orig);
-
-                        /* cache lookup of hash (srv[1]:srv[2]) else dl */
-
-                        uint8_t addr_port[ADDR_PORT_STRLEN] = { 0 };
-
-                        strncat ((char *) addr_port, (char *) srv[0], strlen ((char *) srv[0]));
-                        strncat ((char *) addr_port, ":", 1);
-                        strncat ((char *) addr_port, (char *) srv[1], strlen ((char *) srv[1]));
-
-
-                        /**
-                         * send from cache, otherwise connect to given address
-                         * and port, download data, write to cache, relay back
-                         * to client.
-                         */
-                        if (cache_sendfile (sk, addr_port)) {
-                            fprintf (stdout, "cache hit\n");
-                        } else {
-                            fprintf (stdout, "cache miss\n");
-
-                            uint8_t buf[BUFLEN] = { 0 };
-                            struct addrinfo hints, *remoteinfo, *rp;
-
-                            bzero (&hints, sizeof (struct addrinfo));
-                            hints.ai_family   = AF_UNSPEC;
-                            hints.ai_socktype = SOCK_STREAM;
-
-                            int r;
-                            if ((r = getaddrinfo ((char *) srv[0], (char *) srv[1],
-                                                      &hints, &remoteinfo)) != 0) {
-                                fprintf (stderr, "getaddrinfo: %s\n",
-                                         gai_strerror (r));
-                                continue;
-                            }
-
-                            int dsk;
-                            for (rp = remoteinfo; rp != NULL; rp++) {
-                                if ((dsk = socket (rp->ai_family, rp->ai_socktype,
-                                                   rp->ai_protocol)) < 0) {
-                                    perror("data: socket");
-                                    /**
-                                     * don't continue if we could not establish
-                                     * a socket connection
-                                     */
-                                    rp = NULL;
-                                    break;
-                                }
-
-                                if (connect (dsk, rp->ai_addr, rp->ai_addrlen) < 0) {
-                                    close (dsk);
-                                    perror ("data: connect");
-                                    continue;
-                                }
-
-                                break;
-                            }
-
-                            if (dsk > fdmax) {
-                                fdmax = dsk;
-                            }
-
-                            if (rp == NULL) {
-                                fprintf (stderr,
-                                         "data: could not connect to %s:%s\n",
-                                         (char *) srv[0], (char *) srv[1]);
-                                /* TODO what to do if connection fails */
-                                break;
-                            }
-
-                            fprintf (stdout, "connected to %s:%s with socket %d\n",
-                                     (char *) srv[0], (char *) srv[1], dsk);
-
-#if 0
-                            if (setnonblock (dsk) < 0) {
-                                perror ("could not make data socket nonblocking");
-                                continue;
-                            }
-#endif
-
-                            /* add data socket to socket set */
-                            //FD_SET (dsk, &sockset);
-
-                /**
-                 * TODO THIS SHOULD GO INTO recv on remote data socket
-                 */
-
-                            /* recv on remote data socket */
-                            if ((numbytes = recv(dsk, buf, sizeof (buf), 0)) <= 0) {
-                                /* connection closed or socket error */
-                                if (numbytes == 0) {
-                                    fprintf (stdout, "socket %d closed\n", dsk);
-                                } else {
-                                    perror ("data recv error");
-                                }
-
-                                /* close socket and remove it from socket set */
-                                close (dsk);
-                                FD_CLR (sk, &datasocks);
-                            }
-
-                            fprintf (stdout, "%s", (char *) buf);
-
-                            cache_write (addr_port, buf);
-
-                            /* relay back to client */
-                            size_t buflen = strlen ((char *) buf);
-                            if (sendall (sk, buf, &buflen) < 0) {
-                                perror ("sendall");
-                                fprintf (stderr, "only sent %d bytes.\n", (int) buflen);
-                            }
-                /**
-                 * END
-                 */
-
-                            freeaddrinfo (remoteinfo);
-                        }
-                    }
-                }
-            } else if (FD_ISSET (sk, &datasocks)) {
-                /* TODO */
-                ;
-#if 0
-                /* recv on remote data socket */
-                uint8_t buf[BUFLEN] = { 0 };
-                if ((numbytes = recv(sk, buf, sizeof (buf), 0)) <= 0) {
-                    /* connection closed or socket error */
-                    if (numbytes == 0) {
-                        fprintf (stdout, "socket %d closed\n", sk);
-                    } else {
-                        perror ("data recv error");
-                    }
-
-                    /* close socket and remove it from socket set */
-                    close (sk);
-                    FD_CLR (sk, &datasocks);
-                }
-
-                fprintf (stdout, "%s", (char *) buf);
-#endif
-            }
-        }
-#endif
     }
-
 
     free (events);
     close (listensock);

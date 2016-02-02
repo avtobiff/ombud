@@ -113,7 +113,7 @@ cache_init (const uint8_t * cache_basedir)
  * Store buf in cache at key.
  */
 int
-cache_write (const uint8_t * key, const uint8_t * buf)
+cache_write (const uint8_t * key, const uint8_t * buf, const ssize_t buflen)
 {
     uint8_t hash[HASHLEN] = { 0 };
     uint8_t cache_dir_[PATH_MAXSIZ + 1] = { 0 };
@@ -133,7 +133,7 @@ cache_write (const uint8_t * key, const uint8_t * buf)
     fp = open ((char *) cache_file_path,
                O_WRONLY | O_CREAT,
                S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-    write (fp, buf, strlen ((char *) buf));
+    write (fp, buf, buflen);
     fsync (fp); // ensure everything is flushed to disk
     close (fp);
 

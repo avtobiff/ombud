@@ -118,32 +118,3 @@ sendall (const int socket, const uint8_t *buf, size_t *buflen)
 
     return numbytes == -1 ? -1 : 0;
 }
-
-/**
- * Read all data from socket to buf, number of bytes read are stored in buflen.
- */
-int
-readall (const int socket, uint8_t *buf, size_t *buflen)
-{
-    ssize_t     readbytes;
-
-    for (;;) {
-        readbytes = read (socket, buf, sizeof (buf));
-        if (readbytes < 0) {
-            if (errno != EAGAIN) {
-                perror ("readall");
-                goto fin;
-            }
-        }
-        else if (readbytes == 0) {
-            /* EOF, remote closed the connection */
-            goto fin;
-        }
-    }
-
-fin:
-    *buflen = (size_t) readbytes;
-    close (socket);
-
-    return readbytes == -1 ? -1 : 0;
-}
