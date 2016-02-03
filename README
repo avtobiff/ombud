@@ -146,4 +146,7 @@ POSSIBLE IMPROVEMENTS
   prototype fashion.
 
 * Mixing naming convention of static functions in different files. It
-  would be good to use consistent coding style guide lines.
+  would be good to use consistent coding style guide lines. I have
+  tested different styles...
+
+* Run Valgrind to check for memory leaks etc.
