@@ -34,22 +34,23 @@ $PWD/cache-ombud.
 NB! The cache is removed from source directory during invokations of
 make clean.
 
-It is possible to give port number as a command line argument
+It is possible to give port number and number of processes as
+*positional* command line arguments
 
-    bin/ombud 8077
+    bin/ombud 8077 1  # port 8077, one (1) process
 
 Quit by sending SIGINT, i.e. pressing Ctrl-C.
 
 
 USAGE
 -----
-Connect with a network client to Ombud's port and send service commands
+Connect with a network client to Ombud's port and send commands
 
     $ nc localhost 8090
     localhost:22
     SSH-2.0-OpenSSH_7.1p2 Debian-2
 
-It is possible to give both alpha numerical and only numerical hosts and
+It is possible to give both alpha numerical and numerical hosts and
 ports.
 
 
@@ -64,13 +65,12 @@ The event loops are forked into their own processes, one process per CPU
 core, and the listen sockets are setup with SO_REUSEPORT. This will
 enable all four processes to listen on the same listen socket, and the
 kernel handles distribution of incoming requests. (It is stated that
-SO_REUSEPORT will distribute incoming requests uniformly, which was
-stated not to be the case with threaded acceptors. See Linux kernel
-commit c617f39 for more information.)
+SO_REUSEPORT will distribute incoming requests uniformly among the
+processes, which was stated not to be the case with threaded acceptors.
+See Linux kernel commit c617f39 for more information.)
 
-    NB! Using SO_REUSEPORT is a little bit experimentation, that wasn't
-    thouroghly tested for corner cases as the one process implementation
-    was. If it doesn't work please remove it and run one process only.
+    NB! Using SO_REUSEPORT is a little bit experimentation. If it
+    doesn't work try running one process only.
 
 When clients request data from address:port a cache lookup is performed.
 On a cache hit the contents are sent to the client with sendfile(2),
@@ -81,8 +81,8 @@ to the client.
 
 The client connections are toggled between the states READ_CMD, which
 reads commands from the client, and READ_REMOTE, which executes the
-supplied client command (i.e. fetches data from service or cache and
-relays back to the client).
+supplied client command (i.e. fetches data from the remote service or
+the cache and relays back to the client).
 
 
 ASSUMPTIONS
@@ -94,10 +94,10 @@ ASSUMPTIONS
 
 * Not a lot of data will be sent from the services that Ombud connects
   to, a static buffer size of 8 kB is deemed to be adequate for the use
-  case. (This was a simplification instead of having to create a linked
+  case. (This was a simplification instead of having to create a chunked
   buffer, which would have been used in a real world application.)
 
-* Data downloaded from hosts are assumed to never change, hence the
+* Data downloaded from hosts is assumed to never change, hence the
   content in the cache never expires.
 
 * There is no portability, Linux (3.9+) only. (I wanted to experiment
@@ -106,11 +106,13 @@ ASSUMPTIONS
 
 POSSIBLE IMPROVEMENTS
 ---------------------
-* Use libevent instead, for portability and also possibly a nice
-  framework for event driven programming. Given time I would have tried
-  libuv from Joyent, it looks interesting.
+* Use libevent instead, for portability and also a nice framework for
+  event driven programming. Given time I would have tried libuv from
+  Joyent, it looks interesting.
 
-* Use a thread pool for incoming connections, workers etc.
+* Evaluate if using thread pools for incoming connections, workers etc
+  yields higher performance. Possibly trying a combination of processes,
+  threads, and multiplexing.
 
 * In order to make a more efficient cache, hostnames could be resolved
   to ip addresses before they are used as part of the key.
@@ -119,7 +121,7 @@ POSSIBLE IMPROVEMENTS
   GPL an OpenSSL linking exception is required in the license in order
   to be specific about the user's rights and responsibilities. It would
   of course be possible to use libgcrypt in this case instead,
-  especially since we only use SHA1() because it is simple.
+  especially since SHA1() is only used because it is simple.
 
 * Make cache directory and listen port configurable from the command
   line with getopt and possibly through a configuration file.
@@ -127,22 +129,26 @@ POSSIBLE IMPROVEMENTS
 * Since this is a simple server it might be enough to store the cache in
   memory. Alternatively, store it in a ramdisk.
 
-* More robust error handling, e.g. cache storage breaks between succesful
-  lookup and send.
+* More robust error handling, e.g. if cache storage breaks between
+  succesful lookup and send.
 
 * Of course the standard things: more documentation, configuration file,
-  command line options instead of hard coded values etc.
+  command line options (with getopt_long or some such) instead of fixed
+  argument placing on the command line etc.
 
 * Toggable DEBUG prints...
 
 * Input data validation, little to none is done now. Dangerous!
 
-* Possibly it clutters down code casting between uint8_t and char all
-  the time... Interfaces are clean though, clutter comes from functions
-  that use (char *).
+* Possibly it clutters down the code casting between uint8_t and char
+  all the time... The interfaces are clean though, the clutter comes
+  from standard functions that use (char *).
 
 * Tests. Unit tests with e.g. Google Test, functional tests etc. TDD is
   really nice. This time around though everything was built in a quick
-  prototype fashion.
+  prototype fashion. (Maybe one could argue that the valgrind make
+  target is a basic test for some good and bad input data.)
 
 * Analyze Valgrind report and fix, or suppress, errors.
+
+* Proper cleanup of sockets and allocated memory upon catching SIGINT.
