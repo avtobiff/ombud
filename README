@@ -57,17 +57,17 @@ ports.
 DESIGN
 ------
 The main function is in the event loop, which handles client connections
-and executing the client commands (connecting to services) and
-caching/sending back the response. This is based on epoll(7), which is
-Linux specific, and non-blocking sockets.
+and executes the client commands (connecting to services) and
+caches/sends back the response. The event handling is based on epoll(7),
+which is Linux specific, and non-blocking sockets.
 
 The event loops are forked into their own processes, one process per CPU
 core, and the listen sockets are setup with SO_REUSEPORT. This will
-enable all four processes to listen on the same listen socket, and the
-kernel handles distribution of incoming requests. (It is stated that
-SO_REUSEPORT will distribute incoming requests uniformly among the
-processes, which was stated not to be the case with threaded acceptors.
-See Linux kernel commit c617f39 for more information.)
+enable all processes to listen on the same port, and the kernel handles
+distribution of incoming requests. (It is stated that SO_REUSEPORT will
+distribute incoming requests uniformly among the processes, which was
+stated to not be the case with threaded acceptors.  See Linux kernel
+commit c617f39 for more information.)
 
     NB! Using SO_REUSEPORT is a little bit experimentation. If it
     doesn't work try running one process only.
@@ -75,7 +75,7 @@ See Linux kernel commit c617f39 for more information.)
 When clients request data from address:port a cache lookup is performed.
 On a cache hit the contents are sent to the client with sendfile(2),
 which shuffles data from a file descriptor to a socket without leaving
-kernel space. On a cache miss Ombud connects to the given address and
+kernel space. On a cache miss, Ombud connects to the given address and
 port, reads the data, writes it to the cache, and finally relays it back
 to the client.
 
@@ -117,8 +117,8 @@ POSSIBLE IMPROVEMENTS
 * In order to make a more efficient cache, hostnames could be resolved
   to ip addresses before they are used as part of the key.
 
-* Linking against OpenSSL. If the code is going to be release under the
-  GPL an OpenSSL linking exception is required in the license in order
+* Linking against OpenSSL. If the code is going to be released under the
+  GPL, an OpenSSL linking exception is required in the license in order
   to be specific about the user's rights and responsibilities. It would
   of course be possible to use libgcrypt in this case instead,
   especially since SHA1() is only used because it is simple.
@@ -136,7 +136,7 @@ POSSIBLE IMPROVEMENTS
   command line options (with getopt_long or some such) instead of fixed
   argument placing on the command line etc.
 
-* Toggable DEBUG prints...
+* Toggable DEBUG prints.
 
 * Input data validation, little to none is done now. Dangerous!
 
@@ -150,7 +150,6 @@ POSSIBLE IMPROVEMENTS
   target is a basic test for some good and bad input data.)
 
 * Analyze Valgrind report and fix, or suppress, errors. Valgrind helped
-  during development, it showed some errors that was fixed. However,
-  this entire test assignment was timeboxed and now time is up!
+  during development, it showed some errors that was fixed.
 
 * Proper cleanup of sockets and allocated memory upon catching SIGINT.
