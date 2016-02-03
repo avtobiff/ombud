@@ -44,5 +44,5 @@ valgrind: $(executable)
 	sleep 2
 	-pkill -f valgrind &
 	@echo
-	@echo "See valgrind.log for results"
+	@echo "\tSee valgrind.log for results"
 	@echo
