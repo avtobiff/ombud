@@ -26,7 +26,7 @@ clean:
 	rm -f $(executable)
 	rm -f $(OBJS)
 	rm -rf $(CACHE_DIR)
-	rm -f valgrind.pid
+	rm -f valgrind.log
 
 run: $(executable)
 	$(executable)
