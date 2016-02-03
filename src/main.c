@@ -239,6 +239,8 @@ format_service (const uint8_t *buf, const ssize_t buflen, uint8_t *service)
     if ((nl = (uint8_t *) strrchr ((char *) service, '\n')) != NULL) {
         *nl = '\0';
     }
+
+    cr = nl = NULL;
 }
 
 

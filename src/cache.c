@@ -66,7 +66,7 @@ __cache_fpath (const uint8_t * hash, uint8_t * cache_file_path)
 
     strncat ((char *) cache_file_path, (char *) cache_dir_,
              strlen ((char *) cache_dir_));
-    strncat ((char *) cache_file_path, "/", 1);
+    strncat ((char *) cache_file_path, "/", 2);
     /* last 18 hex digits are the file name */
     strncat ((char *) cache_file_path, (char *) hash + 2, HASHLEN - 2);
 }
