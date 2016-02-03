@@ -10,7 +10,7 @@
 #include "cache.h"
 
 
-static uint8_t __cache_basedir[PATH_MAXSIZ] = { 0 };
+static uint8_t cache_basedir[PATH_MAXSIZ] = { 0 };
 
 
 /*******************************************************************************
@@ -23,7 +23,7 @@ static uint8_t __cache_basedir[PATH_MAXSIZ] = { 0 };
  * Calculate hash based on "addr:port"
  */
 static void
-__compute_hash (const uint8_t * key, uint8_t * hash)
+compute_hash (const uint8_t * key, uint8_t * hash)
 {
     uint8_t tmphash[SHA_DIGEST_LENGTH] = { 0 };
 
@@ -43,11 +43,11 @@ __compute_hash (const uint8_t * key, uint8_t * hash)
  * Get cache directory name.
  */
 static void
-__cache_dir (const uint8_t * hash, uint8_t * cache_dir_)
+cache_dir (const uint8_t * hash, uint8_t * cache_dir_)
 {
     /* path to base cache dir */
-    strncat ((char *) cache_dir_, (char *) __cache_basedir,
-             strlen ((char *) __cache_basedir));
+    strncat ((char *) cache_dir_, (char *) cache_basedir,
+             strlen ((char *) cache_basedir));
     strncat ((char *) cache_dir_, "/", 1);
     /* two first hex digits are directory name */
     strncat ((char *) cache_dir_, (char *) hash, 2);
@@ -58,11 +58,11 @@ __cache_dir (const uint8_t * hash, uint8_t * cache_dir_)
  * Format cache file path.
  */
 static void
-__cache_fpath (const uint8_t * hash, uint8_t * cache_file_path)
+cache_fpath (const uint8_t * hash, uint8_t * cache_file_path)
 {
     uint8_t cache_dir_[PATH_MAXSIZ] = { 0 };
 
-    __cache_dir (hash, cache_dir_);
+    cache_dir (hash, cache_dir_);
 
     strncat ((char *) cache_file_path, (char *) cache_dir_,
              strlen ((char *) cache_dir_));
@@ -86,18 +86,18 @@ __cache_fpath (const uint8_t * hash, uint8_t * cache_file_path)
  * Note this is not handling nestling of directories, i.e. mkdir -p.
  */
 int
-cache_init (const uint8_t * cache_basedir)
+cache_init (const uint8_t * cache_basedir_input)
 {
     struct stat     st;
     int             status = 0;
 
     /* setup cache basedir */
-    strncat ((char *) __cache_basedir, (char *) cache_basedir,
-             strlen ((char *) cache_basedir));
+    strncat ((char *) cache_basedir, (char *) cache_basedir_input,
+             strlen ((char *) cache_basedir_input));
 
-    if (stat ((char *) __cache_basedir, &st) != 0) {
+    if (stat ((char *) cache_basedir, &st) != 0) {
         /* cache directory does not exist, create it */
-        if (mkdir ((char *) __cache_basedir, 0777) != 0 && errno != EEXIST) {
+        if (mkdir ((char *) cache_basedir, 0777) != 0 && errno != EEXIST) {
             status = -1;
         }
     } else if (!S_ISDIR (st.st_mode)) {
@@ -120,9 +120,9 @@ cache_write (const uint8_t * key, const uint8_t * buf, const ssize_t buflen)
     uint8_t cache_file_path[PATH_MAXSIZ] = { 0 };
     int fp;
 
-    __compute_hash (key, hash);
-    __cache_dir (hash, cache_dir_);
-    __cache_fpath (hash, cache_file_path);
+    compute_hash (key, hash);
+    cache_dir (hash, cache_dir_);
+    cache_fpath (hash, cache_file_path);
 
     if (mkdir ((char *) cache_dir_, 0777) != 0 && errno != EEXIST) {
         /* could not create cache dir */
@@ -156,8 +156,8 @@ cache_sendfile (const int socket, const uint8_t * key)
     size_t      fsize;
     ssize_t     sentbytes = 0;
 
-    __compute_hash (key, hash);
-    __cache_fpath (hash, cache_file_path);
+    compute_hash (key, hash);
+    cache_fpath (hash, cache_file_path);
 
     /* calculate cache content size */
     if ((fp = fopen ((char *) cache_file_path, "r")) == NULL) {

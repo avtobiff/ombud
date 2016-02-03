@@ -145,8 +145,4 @@ POSSIBLE IMPROVEMENTS
   really nice. This time around though everything was built in a quick
   prototype fashion.
 
-* Mixing naming convention of static functions in different files. It
-  would be good to use consistent coding style guide lines. I have
-  tested different styles...
-
 * Analyze Valgrind report and fix, or suppress, errors.

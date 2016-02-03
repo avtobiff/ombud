@@ -314,7 +314,7 @@ do_read_remote (struct command *command, uint8_t *buf, size_t *buflen)
             perror ("data recv error");
         }
 
-        /* close socket socket to remote host */
+        /* close socket to remote host */
         close (command->rfd);
     }
 
@@ -331,25 +331,7 @@ do_read_remote (struct command *command, uint8_t *buf, size_t *buflen)
 
 
 /**
- * Signal handler, exits on SIGINT.
- */
-static void
-sighandler (int signal)
-{
-    if (signal == SIGINT) {
-        for (int i = 0; i < NUMCHILDS; i++) {
-            if (child_pids[i] != 0) {
-                kill (child_pids[i], SIGKILL);
-            }
-        }
-    }
-}
-
-
-
-
-/**
- * Ombud main entry point.
+ * Main server event loop.
  */
 static int
 child (const int8_t index, const uint8_t *server_port)
@@ -452,12 +434,29 @@ child (const int8_t index, const uint8_t *server_port)
 
 
 /**
- * Main server event loop.
+ * Signal handler, exits on SIGINT.
+ */
+static void
+sighandler (int signal)
+{
+    if (signal == SIGINT) {
+        for (int i = 0; i < NUMCHILDS; i++) {
+            if (child_pids[i] != 0) {
+                kill (child_pids[i], SIGKILL);
+            }
+        }
+    }
+}
+
+
+/**
+ * Ombud main entry point.
  */
 int
 main (int argc, char *argv[])
 {
-    int             status;
+    int             status,
+                    numchilds;
 
     uint8_t         *server_port;
 
@@ -465,7 +464,7 @@ main (int argc, char *argv[])
     signal (SIGINT, sighandler);
 
     /* get (valid) port from command line or use default port */
-    if (argc == 2 && atoi (argv[1]) < 65536) {
+    if ((argc >= 2) && (atoi (argv[1]) < 65536)) {
         size_t portlen = strlen (argv[1]);
         server_port = calloc (1, portlen);
         strncat ((char *) server_port, argv[1], portlen);
@@ -474,9 +473,16 @@ main (int argc, char *argv[])
         strcat ((char *) server_port, DEFAULT_PORT);
     }
 
-    child_pids = calloc (NUMCHILDS, sizeof (pid_t));
+    /* get user defined number of concurrent processes */
+    if ((argc >= 3) && (atoi (argv[2]) < sysconf (_SC_CHILD_MAX))) {
+        numchilds = atoi(argv[2]);
+    } else {
+        numchilds = NUMCHILDS;
+    }
 
-    for (int8_t i = 0; i < NUMCHILDS; i++) {
+    child_pids = calloc (numchilds, sizeof (pid_t));
+
+    for (int8_t i = 0; i < numchilds; i++) {
         pid_t pid = fork ();
 
         if (pid == 0) {
@@ -494,7 +500,6 @@ main (int argc, char *argv[])
     wait (&status);
 
     free (child_pids);
-
 
     return EXIT_SUCCESS;
 }
