@@ -32,8 +32,8 @@ run: $(executable)
 	$(executable)
 
 valgrind: $(executable)
-	valgrind -v --leak-check=full --show-leak-kinds=all --trace-children=yes \
-	         --undef-value-errors=no --log-file=valgrind.log \
+	valgrind -v --leak-check=full --show-leak-kinds=all \
+	         --trace-children=yes --log-file=valgrind.log \
 	         $(executable) &
 	sleep 2
 	# a few simple test cases
