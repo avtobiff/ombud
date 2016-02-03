@@ -26,6 +26,22 @@ clean:
 	rm -f $(executable)
 	rm -f $(OBJS)
 	rm -rf $(CACHE_DIR)
+	rm -f valgrind.pid
 
 run: $(executable)
 	$(executable)
+
+valgrind: $(executable)
+	valgrind -v --leak-check=full --trace-children=yes \
+	         --undef-value-errors=no --log-file=valgrind.log \
+	         $(executable) &
+	sleep 2
+	echo localhost:22 | nc localhost 8090 &
+	echo badservice | nc localhost 8090 &
+	echo : | nc localhost 8090 &
+	echo | nc localhost 8090 &
+	sleep 2
+	-pkill -f valgrind &
+	@echo
+	@echo "See valgrind.log for results"
+	@echo

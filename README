@@ -149,4 +149,4 @@ POSSIBLE IMPROVEMENTS
   would be good to use consistent coding style guide lines. I have
   tested different styles...
 
-* Run Valgrind to check for memory leaks etc.
+* Analyze Valgrind report and fix, or suppress, errors.
