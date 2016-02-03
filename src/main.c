@@ -301,7 +301,7 @@ do_read_cmd (const int epollfd, struct command * command)
  * Read from remote host.
  */
 static void
-do_read_remote (struct command *command, uint8_t *buf, size_t *buflen)
+do_read_remote (struct command *command, uint8_t *buf, ssize_t *buflen)
 {
     ssize_t readbytes;
 
@@ -409,13 +409,16 @@ child (const int8_t index, const uint8_t *server_port)
                     case READ_REMOTE:
                         ;   /* hack needed for variable defs inside switch */
                         uint8_t buf[BUFLEN] = { 0 };
-                        size_t buflen;
+                        ssize_t buflen;
                         /* command is free'd in d_r_r() */
                         int cfd = command->cfd;
 
                         do_read_remote (command, buf, &buflen);
-                        if (sendall (cfd, buf, &buflen) < 0) {
-                            warn ("Could not relay back data to client");
+                        /* verify that we actually have data to relay back */
+                        if (buflen > 0) {
+                            if (!sendall (cfd, buf, (size_t *) &buflen)) {
+                                warn ("Could not relay back data to client");
+                            }
                         }
                         break;
 

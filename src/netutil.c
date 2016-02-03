@@ -116,5 +116,5 @@ sendall (const int socket, const uint8_t *buf, size_t *buflen)
     /* set buflen, i.e. "return value" */
     *buflen = sentbytes;
 
-    return numbytes == -1 ? -1 : 0;
+    return sentbytes != -1;
 }
