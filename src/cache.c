@@ -10,7 +10,7 @@
 #include "cache.h"
 
 
-static uint8_t __cache_basedir[PATH_MAXSIZ + 1] = { 0 };
+static uint8_t __cache_basedir[PATH_MAXSIZ] = { 0 };
 
 
 /*******************************************************************************
@@ -60,7 +60,7 @@ __cache_dir (const uint8_t * hash, uint8_t * cache_dir_)
 static void
 __cache_fpath (const uint8_t * hash, uint8_t * cache_file_path)
 {
-    uint8_t cache_dir_[PATH_MAXSIZ + 1] = { 0 };
+    uint8_t cache_dir_[PATH_MAXSIZ] = { 0 };
 
     __cache_dir (hash, cache_dir_);
 
@@ -116,8 +116,8 @@ int
 cache_write (const uint8_t * key, const uint8_t * buf, const ssize_t buflen)
 {
     uint8_t hash[HASHLEN] = { 0 };
-    uint8_t cache_dir_[PATH_MAXSIZ + 1] = { 0 };
-    uint8_t cache_file_path[PATH_MAXSIZ + 1] = { 0 };
+    uint8_t cache_dir_[PATH_MAXSIZ] = { 0 };
+    uint8_t cache_file_path[PATH_MAXSIZ] = { 0 };
     int fp;
 
     __compute_hash (key, hash);
@@ -151,7 +151,7 @@ ssize_t
 cache_sendfile (const int socket, const uint8_t * key)
 {
     uint8_t     hash[HASHLEN] = { 0 };
-    uint8_t     cache_file_path[PATH_MAXSIZ + 1] = { 0 };
+    uint8_t     cache_file_path[PATH_MAXSIZ] = { 0 };
     FILE        *fp;
     size_t      fsize;
     ssize_t     sentbytes = 0;
