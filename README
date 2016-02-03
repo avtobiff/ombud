@@ -149,6 +149,8 @@ POSSIBLE IMPROVEMENTS
   prototype fashion. (Maybe one could argue that the valgrind make
   target is a basic test for some good and bad input data.)
 
-* Analyze Valgrind report and fix, or suppress, errors.
+* Analyze Valgrind report and fix, or suppress, errors. Valgrind helped
+  during development, it showed some errors that was fixed. However,
+  this entire test assignment was timeboxed and now time is up!
 
 * Proper cleanup of sockets and allocated memory upon catching SIGINT.
