@@ -32,10 +32,11 @@ run: $(executable)
 	$(executable)
 
 valgrind: $(executable)
-	valgrind -v --leak-check=full --trace-children=yes \
+	valgrind -v --leak-check=full --show-leak-kinds=all --trace-children=yes \
 	         --undef-value-errors=no --log-file=valgrind.log \
 	         $(executable) &
 	sleep 2
+	# a few simple test cases
 	echo localhost:22 | nc localhost 8090 &
 	echo badservice | nc localhost 8090 &
 	echo : | nc localhost 8090 &
