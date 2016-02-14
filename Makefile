@@ -42,7 +42,8 @@ valgrind: $(executable)
 	echo badservice | nc localhost 8090 &
 	echo : | nc localhost 8090 &
 	echo | nc localhost 8090 &
-	sleep 2
+	python util/multicmd.py &
+	sleep 5
 	-pkill -f valgrind &
 	@echo
 	@echo "\tSee valgrind.log for results"
