@@ -26,7 +26,8 @@
 #define BUFLEN              8192
 
 #define CACHE_BASEDIR       "cache-ombud" /* TODO make this configurable */
-#define ADDR_PORT_STRLEN    22
+
+#define SERVMAXLEN          NI_MAXHOST + NI_MAXSERV + 1   /* "addr:port" */
 
 /* constants we use with epoll */
 #define MAXEVENTS           64
@@ -222,25 +223,43 @@ connect_remote_host (const uint8_t *remote_srv, const ssize_t len)
 
 
 /**
- * Strip \r and \n from command, creating key used in the cache and also string
- * used when connecting to remote host..
+ * Extract commands from client buffer.
  *
- * Handles rightmost \r and \n if they exist.
+ * The function dynamically allocates a memory region for the parsed result.
  */
-static void
-format_service (const uint8_t *buf, const ssize_t buflen, uint8_t *service)
+static uint8_t**
+extract_cmds (const uint8_t *buf)
 {
-    uint8_t *cr, *nl;
+    uint8_t     num = 0;
+    uint8_t     **cmds = calloc (1, SERVMAXLEN);
 
-    strncat ((char *) service, (char *) buf, buflen);
-    if ((cr = (uint8_t *) strrchr ((char *) service, '\r')) != NULL) {
-        *cr = '\0';
-    }
-    if ((nl = (uint8_t *) strrchr ((char *) service, '\n')) != NULL) {
-        *nl = '\0';
+
+    /* split on newlines, allow commands with only \n as well as \r\n */
+    uint8_t     *tok = (uint8_t *) strtok ((char *) buf, "\n");
+
+    /* extract each command from user input */
+    for (;;) {
+        /* exhausted input buffer */
+        if (!tok) {
+            cmds[num++] = NULL;
+            break;
+        }
+
+        /* remove possible carriage return */
+        uint8_t *cr;
+        if ((cr = (uint8_t *) strrchr ((char *) tok, '\r')) != NULL) {
+            *cr = '\0';
+        }
+
+        /* duplicate and save command if it exists */
+        cmds[num++] = tok ? (uint8_t *) strdup ((char *) tok) : tok;
+
+        /* alloc place for another command */
+        cmds = realloc (cmds, (num + 2) * SERVMAXLEN);
+        tok = (uint8_t *) strtok (NULL, "\n");
     }
 
-    cr = nl = NULL;
+    return cmds;
 }
 
 
@@ -253,7 +272,7 @@ do_read_cmd (const int epollfd, struct command * command)
     uint8_t buf[BUFLEN] = { 0 };
     ssize_t readbytes;
 
-    /* read command from client */
+    /* read command(s) from client */
     if ((readbytes = read (command->cfd, buf, BUFLEN)) <= 0) {
         if (readbytes == 0) {
             /* EOF, client closed socket */
@@ -265,33 +284,38 @@ do_read_cmd (const int epollfd, struct command * command)
     }
     /* send from cache or defer relay */
     else {
-        uint8_t *service = calloc (1, readbytes);
-        format_service (buf, readbytes, service);
-        /* try sending from cache, upon miss defer remote host read */
-        if (!cache_sendfile (command->cfd, service))
-        {
-            int rsock;
-            if ((rsock = connect_remote_host (service, readbytes)) < 0) {
-                warn ("could not connect to host");
-                return;
+        uint8_t **services = extract_cmds (buf);
+
+        for (; services && *services; ++services) {
+            uint8_t *service = *services;
+
+            /* try sending from cache, upon miss defer remote host read */
+            if (!cache_sendfile (command->cfd, service))
+            {
+                int rsock;
+                if ((rsock = connect_remote_host (service, readbytes)) < 0) {
+                    warn ("could not connect to host");
+                    return;
+                }
+
+                struct command *newcmd = calloc (1, sizeof (struct command));
+                /* add command to read remote host data to event queue */
+                newcmd->cmd = READ_REMOTE;
+                newcmd->cfd = command->cfd;
+                newcmd->rfd = rsock;
+                newcmd->service = service;
+
+                /* add command to event queue */
+                epoll_add (epollfd, newcmd);
             }
-
-            struct command *newcmd = calloc (1, sizeof (struct command));
-            /* add command to read remote host data to event queue */
-            newcmd->cmd = READ_REMOTE;
-            newcmd->cfd = command->cfd;
-            newcmd->rfd = rsock;
-            newcmd->service = service;
-
-            /* add command to event queue */
-            epoll_add (epollfd, newcmd);
         }
 
+        /* processed all commands, back to READ_CMD */
         struct command *readcmd = calloc (1, sizeof (struct command));
 
-        /* back to READ_CMD */
         readcmd->cmd = READ_CMD;
         readcmd->cfd = command->cfd;
+
         epoll_mod (epollfd, readcmd);
     }
 }
