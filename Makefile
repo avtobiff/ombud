@@ -33,7 +33,8 @@ run: $(executable)
 
 valgrind: $(executable)
 	valgrind -v --leak-check=full --show-leak-kinds=all \
-	         --trace-children=yes --log-file=valgrind.log \
+	         --trace-children=yes --track-origins=yes \
+	         --log-file=valgrind.log \
 	         $(executable) &
 	sleep 2
 	# a few simple test cases
