@@ -11,10 +11,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
-#include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+#define _GNU_SOURCE
+#include <sys/socket.h>
 
 #include "netutil.h"
 #include "cache.h"
@@ -100,8 +102,12 @@ do_accept (const int listensock, const int epollfd)
         peer_addr_len = sizeof (peer_addr);
         /* TODO use accept4() instead of accept and mk_nonblock, saves calls to
          * fcntl and userspace flag bit twiddling. */
+#if 0
         client_socket = accept (listensock, (struct sockaddr *) &peer_addr,
                                 &peer_addr_len);
+#endif
+        client_socket = accept4 (listensock, (struct sockaddr *) &peer_addr,
+                                 &peer_addr_len, SOCK_NONBLOCK);
 
         if (client_socket < 0) {
             if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
@@ -113,9 +119,11 @@ do_accept (const int listensock, const int epollfd)
             }
         }
 
+#if 0
         if (mk_nonblock (client_socket) < 0) {
             err (1, "Could not make client socket non-blocking");
         }
+#endif
 
         /* create read client command */
         command = calloc (1, sizeof (struct command));
